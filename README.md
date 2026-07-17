@@ -4,6 +4,14 @@ A mobile-first web app that plans all 26 biweekly paychecks: auto-caps at the IR
 
 **Try-before-signup:** the app is fully functional with no account — data saves to the device (localStorage). Creating an account syncs the plan to the cloud.
 
+
+## v2 changes
+
+- **Generic example data** — ships with a simple starter profile ($85,000 salary, 6% pre-tax, 50%-of-6% match, no bonus). No personal numbers anywhere. Existing saved plans migrate automatically.
+- **Pay frequency** — weekly (52), every two weeks (26), 1st & 15th (24), or monthly (12). The engine, pay strip, tables, scenarios, and PDF all adapt; annual totals are frequency-independent (verified by tests).
+- **Education layer** — a glossary of 18 beginner-friendly explainers opens from "?" buttons next to every stat and input, plus a "Two-minute lessons" card row on the dashboard (match, SS wage-base cutoff, mega backdoor, Roth vs pre-tax, true-up trap, compounding, 4% rule, catch-up).
+- **Dark fintech redesign** — deep navy canvas with ambient gradient glows, glass cards, glowing mint data accents, dark-mode charts (donut for limit usage, gradient-filled projection line, rounded scenario bars).
+
 ## Files
 
 | File | Purpose |

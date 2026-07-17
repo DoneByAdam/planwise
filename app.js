@@ -7,8 +7,8 @@
    CONFIG — paste your Supabase project values to enable accounts.
    Leave blank and the app runs in device-only mode.
    ============================================================ */
-const SUPABASE_URL = "";      // e.g. "https://abcd1234.supabase.co"
-const SUPABASE_ANON_KEY = ""; // the "anon public" key (safe to ship; RLS protects data)
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
 
 /* ============================================================
    IRS DATA — fetched from irs-limits.json, with embedded fallback
@@ -32,20 +32,44 @@ const IRS_FALLBACK = {
 let IRS = IRS_FALLBACK;
 
 /* ============================================================
-   STATE
+   PAY FREQUENCIES
+   ============================================================ */
+const FREQ = {
+  weekly:      { n: 52, label: "weekly",            stepDays: 7  },
+  biweekly:    { n: 26, label: "every two weeks",   stepDays: 14 },
+  semimonthly: { n: 24, label: "on the 1st & 15th", stepDays: null },
+  monthly:     { n: 12, label: "monthly",           stepDays: null }
+};
+function payDates(s) {
+  const f = FREQ[s.frequency] || FREQ.biweekly;
+  const dates = [];
+  if (f.stepDays) {
+    const first = new Date(s.firstPay + "T12:00:00");
+    for (let i = 0; i < f.n; i++) { const d = new Date(first); d.setDate(first.getDate() + i * f.stepDays); dates.push(d); }
+  } else if (s.frequency === "semimonthly") {
+    for (let m = 0; m < 12; m++) { dates.push(new Date(s.planYear, m, 1, 12)); dates.push(new Date(s.planYear, m, 15, 12)); }
+  } else { // monthly — 1st of each month
+    for (let m = 0; m < 12; m++) dates.push(new Date(s.planYear, m, 1, 12));
+  }
+  return dates;
+}
+
+/* ============================================================
+   STATE — simple, generic example numbers (edit everything!)
    ============================================================ */
 const DEFAULT_STATE = {
-  planYear: 2026, filing: "single", birthYear: 1988,
-  firstPay: "2026-01-09", bonusPct: 15, bonusPeriod: 6,
-  salaryTiers: [{ start: 1, salary: 174441 }, { start: 4, salary: 186402 }],
-  rateTiers: [{ start: 1, pre: 12, roth: 0, after: 0 }],
-  matchRate: 50, matchCap: 8, trueUp: "no",
-  balance: 150000, retireAge: 60, expReturn: 7, contribGrowth: 2,
+  planYear: 2026, filing: "single", birthYear: 1990,
+  frequency: "biweekly", firstPay: "2026-01-09",
+  bonusPct: 0, bonusPeriod: 6,
+  salaryTiers: [{ start: 1, salary: 85000 }],
+  rateTiers: [{ start: 1, pre: 6, roth: 0, after: 0 }],
+  matchRate: 50, matchCap: 6, trueUp: "no",
+  balance: 25000, retireAge: 65, expReturn: 7, contribGrowth: 2,
   scenarios: [
-    { name: "Current plan", pre: 12, roth: 0, after: 0 },
-    { name: "Max exactly", pre: 11.5, roth: 0, after: 0 },
-    { name: "Roth split", pre: 6, roth: 6, after: 0 },
-    { name: "Mega backdoor", pre: 11.5, roth: 0, after: 10 }
+    { name: "My current plan", pre: 6, roth: 0, after: 0 },
+    { name: "Capture full match", pre: 6, roth: 0, after: 0 },
+    { name: "Save 10%", pre: 10, roth: 0, after: 0 },
+    { name: "Roth split", pre: 5, roth: 5, after: 0 }
   ]
 };
 let state = load() || structuredClone(DEFAULT_STATE);
@@ -54,7 +78,7 @@ let charts = {};
 let supa = null, session = null, encKeyPass = null;
 
 /* ============================================================
-   ENGINE  (ported 1:1 from the verified Excel model)
+   ENGINE
    ============================================================ */
 function limitsFor(year) {
   const ys = IRS.years || {};
@@ -89,23 +113,23 @@ function marginalRate(taxable, brackets) {
 
 function compute(s) {
   const L = limitsFor(s.planYear);
+  const N = (FREQ[s.frequency] || FREQ.biweekly).n;
   const lim = myLimit(s, L);
   const brackets = L.brackets[s.filing];
   const stdDed = L.standardDeduction[s.filing];
   const salaryTiers = [...s.salaryTiers].sort((a, b) => a.start - b.start);
   const rateTiers = [...s.rateTiers].sort((a, b) => a.start - b.start);
-  const bonusSalary = tierAt(salaryTiers, s.bonusPeriod, "salary");
-  const bonus = (s.bonusPct / 100) * bonusSalary;
+  const bonusP = Math.min(Math.max(1, +s.bonusPeriod || 1), N);
+  const bonus = (s.bonusPct / 100) * tierAt(salaryTiers, bonusP, "salary");
+  const dates = payDates(s);
 
   const rows = [];
   let grossYTD = 0, defYTD = 0, matchTotal = 0, ssTotal = 0, medTotal = 0;
   let preTotal = 0, rothTotal = 0, afterTotal = 0, cappedAt = null, ssStopsAt = null;
-  const first = new Date(s.firstPay + "T12:00:00");
 
-  for (let p = 1; p <= 26; p++) {
-    const date = new Date(first); date.setDate(first.getDate() + (p - 1) * 14);
-    const base = tierAt(salaryTiers, p, "salary") / 26;
-    const bon = p === s.bonusPeriod ? bonus : 0;
+  for (let p = 1; p <= N; p++) {
+    const base = tierAt(salaryTiers, p, "salary") / N;
+    const bon = (p === bonusP && s.bonusPct > 0) ? bonus : 0;
     const g = base + bon;
     const pre = tierAt(rateTiers, p, "pre") / 100;
     const roth = tierAt(rateTiers, p, "roth") / 100;
@@ -125,7 +149,7 @@ function compute(s) {
     defYTD += preD + rothD;
     preTotal += preD; rothTotal += rothD; afterTotal += afterD;
     matchTotal += match; ssTotal += ss; medTotal += med;
-    rows.push({ p, date, g, bon, pre, roth, preD, rothD, afterD, defYTD, room: lim - defYTD, match, ss, med });
+    rows.push({ p, date: dates[p - 1], g, bon, pre, roth, preD, rothD, afterD, defYTD, room: lim - defYTD, match, ss, med });
   }
 
   if (s.trueUp === "yes") {
@@ -141,7 +165,6 @@ function compute(s) {
     r.takeHome = r.g - r.preD - r.rothD - r.afterD - r.ss - r.med - (r.g - r.preD) * effRate;
   }
 
-  // projection
   const proj = [];
   let bal = +s.balance || 0;
   const c0 = defYTD + afterTotal + matchTotal;
@@ -154,12 +177,12 @@ function compute(s) {
     bal = bal + c + growth;
     totalContrib += c;
     proj.push({ year: +s.planYear + i, age: a, contrib: c, balance: bal });
-    if (a >= Math.max(s.retireAge + 8, 70)) break;
+    if (a >= Math.max(+s.retireAge + 8, 70)) break;
   }
   const atRet = proj.find(r => r.age === +s.retireAge)?.balance ?? bal;
 
   return {
-    L, lim, rows, bonus, grossYTD, preTotal, rothTotal, afterTotal, defTotal: defYTD,
+    L, N, lim, rows, bonus, grossYTD, preTotal, rothTotal, afterTotal, defTotal: defYTD,
     matchTotal, ssTotal, medTotal, cappedAt, ssStopsAt,
     taxable, tax, tax0, taxSaved: tax0 - tax, effRate,
     marginal: marginalRate(taxable, brackets), stdDed,
@@ -170,14 +193,14 @@ function compute(s) {
 }
 
 function computeScenario(s, R, sc) {
-  const L = R.L, lim = R.lim, comp = R.grossYTD;
+  const L = R.L, lim = R.lim, comp = R.grossYTD, N = R.N;
   const rate = (sc.pre + sc.roth) / 100;
   const desired = rate * comp;
   const actual = Math.min(desired, lim);
   const capped = desired > lim;
-  const periods = capped ? Math.min(26, Math.ceil(lim / (rate * comp / 26))) : 26;
+  const periods = capped ? Math.min(N, Math.ceil(lim / (rate * comp / N))) : N;
   const afterD = (sc.after / 100) * comp;
-  let match = (s.matchRate / 100) * Math.min(rate, s.matchCap / 100) * (comp / 26) * periods;
+  let match = (s.matchRate / 100) * Math.min(rate, s.matchCap / 100) * (comp / N) * periods;
   if (s.trueUp === "yes") match = (s.matchRate / 100) * Math.min(actual, (s.matchCap / 100) * comp);
   const matchLost = Math.max(0, R.maxMatch - match);
   const preD = rate > 0 ? actual * (sc.pre / 100) / rate : 0;
@@ -188,8 +211,47 @@ function computeScenario(s, R, sc) {
   const takeHome = comp - actual - afterD - tax - fica;
   return { ...sc, desired, actual, capped, periods, afterD, match, matchLost,
            additions: actual + afterD + match, over415: actual + afterD + match > L.totalAdditions415c,
-           taxSaved: R.tax0 - tax, takeHome, perPay: takeHome / 26 };
+           taxSaved: R.tax0 - tax, takeHome, perPay: takeHome / N };
 }
+
+/* ============================================================
+   GLOSSARY — beginner-friendly, opened from any "?" button
+   ============================================================ */
+const GLOSSARY = {
+  whatIsThis: { t: "What is this tool?", b: `MaxOut plans your <strong>401(k)</strong> — the retirement account you fund straight from your paycheck, usually with free matching money from your employer.<br><br>You tell it how you're paid and what % you contribute; it shows the IRS limits, taxes, and what it all compounds into by retirement.<div class="ex">Rule one of retirement saving: <strong>never leave employer match on the table.</strong> It's an instant 25–100% return.</div>` },
+  payStrip: { t: "Reading this chart", b: `Each bar is one paycheck of the year, in order. The <strong style="color:var(--mint)">green fill</strong> shows how much of that check goes into your 401(k).<br><br>An <strong style="color:var(--amber)">amber bar</strong> means you hit the annual IRS limit mid-paycheck — contributions stop there. A <strong style="color:var(--red)">red edge</strong> marks the paycheck where Social Security tax stops for the year (see "Why paychecks grow late in the year").` },
+  limit402g: { t: "The IRS limit — 402(g)", b: `Each year the IRS caps how much <strong>you</strong> can put into a 401(k) from your salary (pre-tax + Roth combined). For 2026 it's <strong>$24,500</strong>, and it usually rises a little every year.<br><br>Age 50+? You get extra "catch-up" room. Employer match does <strong>not</strong> count against this limit — it has its own, much higher ceiling (the 415(c) limit).` },
+  deferral: { t: "Deferral", b: `"Deferral" is just the formal word for <strong>the money you send from your paycheck into your 401(k)</strong>. You're deferring pay until retirement.<br><br>It comes in two flavors — pre-tax and Roth — and the IRS annual limit applies to the two combined.` },
+  match: { t: "Employer match — free money", b: `Most employers add money when you contribute. A typical formula: <strong>"50% of the first 6% of pay"</strong> — for every dollar you put in (up to 6% of your salary), they add 50 cents.<div class="ex">On an $85,000 salary, a 50%-of-6% match is worth <strong>$2,550/year</strong> — but only if you contribute at least 6%. Contribute 3% and you only get half of it.</div>Financial advisors agree on almost nothing, except this: capture the full match before any other savings goal.` },
+  trueUp: { t: "The true-up (and the front-loading trap)", b: `Most plans calculate your match <strong>each paycheck</strong>. If you rush to the IRS limit by September, your October–December paychecks contribute $0 — and earn $0 match.<br><br>A <strong>true-up</strong> is a year-end correction some plans make, paying you the match you would have earned. Check your plan's Summary Plan Description or ask HR: "Do we have a match true-up?"<div class="ex">No true-up? Spread contributions so you hit the limit on the <em>last</em> paycheck. The dashboard shows the exact rate.</div>` },
+  preVsRoth: { t: "Pre-tax vs. Roth in one minute", b: `<strong>Pre-tax:</strong> skip taxes now, pay them when you withdraw in retirement. Lowers this year's tax bill.<br><br><strong>Roth:</strong> pay taxes now, then withdrawals in retirement are 100% tax-free — growth included.<br><br>Rule of thumb: high tax bracket today → pre-tax tends to win. Early career / lower bracket → Roth tends to win. Unsure? Splitting between both is a respectable hedge.` },
+  megaBackdoor: { t: "After-tax & the mega backdoor Roth", b: `Some plans allow a third bucket: <strong>after-tax contributions</strong> — beyond the normal IRS limit, up to the much larger "total additions" ceiling ($72,000 in 2026, counting everything).<br><br>On their own they're mediocre. The trick — nicknamed the <strong>mega backdoor Roth</strong> — is immediately converting them to Roth inside the plan, so all future growth becomes tax-free.<div class="ex">Requires your plan to allow both after-tax contributions <em>and</em> in-plan Roth conversion. Ask HR — it's a hidden superpower for big savers.</div>` },
+  catchup: { t: "Catch-up contributions (50+)", b: `The year you turn 50, the IRS lets you contribute <strong>extra</strong> beyond the normal limit — $8,000 more in 2026. Ages 60–63 get an even bigger boost ($11,250).<br><br>One 2026 wrinkle: if you earned over $150,000 the prior year, catch-up money must go in as <strong>Roth</strong> (SECURE 2.0 law).` },
+  ssWageBase: { t: "Why paychecks grow late in the year", b: `Social Security tax (6.2%) only applies to the first <strong>$184,500</strong> you earn in 2026. Cross that line and the tax simply stops — your take-home jumps for the rest of the year.<br><br>The red-edged bar on the dashboard marks that paycheck.<div class="ex">Painless move: when SS tax stops, raise your 401(k) rate by ~6% — your take-home stays the same, your retirement gets the difference.</div>` },
+  taxSaved: { t: "How pre-tax saves you taxes", b: `Every pre-tax dollar you contribute is a dollar the IRS doesn't tax this year. In the 22% bracket, contributing $5,000 pre-tax cuts your federal tax bill by about <strong>$1,100</strong>.<br><br>This number compares your actual plan against contributing $0 — it's the discount the tax code gives you for saving.` },
+  maxRate: { t: "The 'max exactly' rate", b: `This is the contribution rate that fills your IRS limit on the <strong>final paycheck</strong> of the year — the sweet spot.<br><br>Why not max faster? If your plan matches per-paycheck without a true-up, finishing early means later paychecks earn no match. Slow and steady literally pays more.` },
+  compounding: { t: "Compounding — the eighth wonder", b: `Your money earns returns; those returns earn returns. At 7%/year, money <strong>doubles roughly every 10 years</strong> — so a dollar invested at 30 can be ~$10 at 65.<br><br>That's why starting early and capturing the match beat almost any clever strategy later.` },
+  fourPct: { t: "The 4% rule", b: `A classic planning shortcut: in retirement you can withdraw about <strong>4% of your balance per year</strong> (adjusting for inflation) with a low historical chance of running out over 30 years.<br><br>Flip it around: want $60,000/year from savings? Aim for ~$1.5 million. It's a rough compass, not a guarantee.` },
+  frequency: { t: "Pay frequency", b: `How often your paycheck arrives changes the math per check, not per year:<br><br><strong>Weekly</strong> — 52 checks · <strong>Every two weeks</strong> — 26 · <strong>1st &amp; 15th</strong> — 24 · <strong>Monthly</strong> — 12.<br><br>Not sure? Check your last two pay stubs' dates. "Every two weeks" (biweekly) is the most common in the US.` },
+  bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br>Enter your target bonus as a % of salary and which paycheck it lands in. No bonus? Leave it at 0.` },
+  filing: { t: "Filing status", b: `How you file federal taxes. It sets your tax brackets and standard deduction:<br><br><strong>Single</strong> — unmarried.<br><strong>Married filing jointly</strong> — you and a spouse file one return (wider brackets, bigger deduction).<br><br>Other statuses exist (head of household, separate) — pick the closer of these two for planning.` },
+  salarySchedule: { t: "Salary schedule", b: `Your gross annual salary — before taxes and deductions. Expecting a raise mid-year? Add a row: <strong>"From pay #14, $92,000"</strong> means the new salary starts at paycheck 14. One row is fine for most people.` },
+  expectedReturn: { t: "Expected annual return", b: `What your investments earn per year, on average. History for diversified stock-heavy portfolios: roughly <strong>7–10% before inflation</strong>; bonds lower. 7% is a common planning default.<br><br>Nobody knows the future — run it at 5% and 9% too and plan for the range.` }
+};
+
+/* ============================================================
+   LEARN CARDS (dashboard education row)
+   ============================================================ */
+const LEARN = [
+  { term: "match",        icon: "M12 2v20M5 9l7-7 7 7", lt: "The only free money in finance", ls: "How the employer match works" },
+  { term: "ssWageBase",   icon: "M3 17l6-6 4 4 8-8",    lt: "Why paychecks grow in the fall", ls: "The Social Security cutoff" },
+  { term: "megaBackdoor", icon: "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5", lt: "Mega backdoor Roth", ls: "The hidden lane past the limit" },
+  { term: "preVsRoth",    icon: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", lt: "Pre-tax or Roth?", ls: "Decide in one minute" },
+  { term: "trueUp",       icon: "M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z", lt: "The front-loading trap", ls: "Maxing out too fast costs match" },
+  { term: "compounding",  icon: "M4 20h16M6 16l4-6 4 3 4-8", lt: "Compounding, explained", ls: "Why starting now beats starting big" },
+  { term: "fourPct",      icon: "M9 14l6-6M9.5 8.5h.01M14.5 13.5h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z", lt: "The 4% rule", ls: "Turn a balance into an income" },
+  { term: "catchup",      icon: "M13 5l7 7-7 7M5 5l7 7-7 7", lt: "Catch-up at 50+", ls: "Extra room later in the game" }
+];
 
 /* ============================================================
    FORMATTING + DOM HELPERS
@@ -199,38 +261,43 @@ const money = n => n.toLocaleString("en-US", { style: "currency", currency: "USD
 const money2 = n => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = n => (n * 100).toFixed(n * 100 % 1 ? 2 : 0) + "%";
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2600); }
+function openGloss(term) {
+  const g = GLOSSARY[term]; if (!g) return;
+  $("glossTitle").textContent = g.t;
+  $("glossBody").innerHTML = g.b;
+  $("glossModal").classList.add("open");
+}
 
 /* ============================================================
-   INSIGHTS ENGINE — rules with reputable sources
+   INSIGHTS ENGINE
    ============================================================ */
 function buildInsights(s, R) {
   const out = [];
   const a = age(s);
-  const effMatchNeeded = s.matchCap;
-  const currentRate = tierAt([...s.rateTiers].sort((x,y)=>x.start-y.start), 26, "pre")
-                    + tierAt([...s.rateTiers].sort((x,y)=>x.start-y.start), 26, "roth");
+  const rateTiers = [...s.rateTiers].sort((x, y) => x.start - y.start);
+  const currentRate = tierAt(rateTiers, R.N, "pre") + tierAt(rateTiers, R.N, "roth");
 
-  if (currentRate < effMatchNeeded) {
+  if (currentRate < s.matchCap) {
     out.push({ kind: "warn", t: "You're leaving free money on the table",
-      p: `Your contribution rate (${currentRate}%) is below the ${effMatchNeeded}% needed to capture the full employer match. Capturing the entire match is the single highest-return move in retirement saving — it's an instant ${s.matchRate}% return.`,
+      p: `Your contribution rate (${currentRate}%) is below the ${s.matchCap}% needed to capture the full employer match. Capturing the entire match is the single highest-return move in retirement saving — it's an instant ${s.matchRate}% return.`,
       src: "Fidelity Viewpoints & Vanguard 'How America Saves' — max the match first." });
   } else {
     out.push({ kind: "good", t: "Full employer match captured",
-      p: `You contribute at least ${effMatchNeeded}% every pay period, so you earn the entire ${money(R.maxMatch)} match available this year.`,
+      p: `You contribute at least ${s.matchCap}% every pay period, so you earn the entire ${money(R.maxMatch)} match available this year.`,
       src: "Fidelity Viewpoints — capture the full match before anything else." });
   }
 
-  if (R.cappedAt && R.cappedAt < 26 && s.trueUp !== "yes") {
+  if (R.cappedAt && R.cappedAt < R.N && s.trueUp !== "yes") {
     const lost = Math.max(0, R.maxMatch - R.matchTotal);
     if (lost > 1) out.push({ kind: "warn", t: `Front-loading is costing you ${money(lost)} of match`,
-      p: `You hit the ${money(R.lim)} limit in pay period ${R.cappedAt}. Paychecks after that get no match unless your plan trues up. Dial the rate to ${pct(R.maxRate)} to fill the limit on your final paycheck instead — same contribution, more match.`,
+      p: `You hit the ${money(R.lim)} limit in pay period ${R.cappedAt} of ${R.N}. Paychecks after that get no match unless your plan trues up. Dial the rate to ${pct(R.maxRate)} to fill the limit on your final paycheck instead — same contribution, more match.`,
       src: "Standard per-payroll match mechanics; confirm true-up in your plan's Summary Plan Description." });
   }
 
   const savingsRate = (R.defTotal + R.afterTotal + R.matchTotal) / R.grossYTD;
   if (savingsRate < 0.15) {
     out.push({ kind: "info", t: `Total savings rate: ${pct(savingsRate)} — Fidelity's guideline is 15%`,
-      p: `Fidelity's rule of thumb is saving 15% of pre-tax income annually (including employer match) starting at 25 to retire comfortably at 67. You're at ${pct(savingsRate)}; each extra 1% is about ${money(R.grossYTD * 0.01 / 26)} per paycheck.`,
+      p: `Fidelity's rule of thumb is saving 15% of pre-tax income annually (including employer match) starting at 25 to retire comfortably at 67. You're at ${pct(savingsRate)}; each extra 1% is about ${money(R.grossYTD * 0.01 / R.N)} per paycheck.`,
       src: "Fidelity Viewpoints — 'How much should I save for retirement?' (15% guideline)." });
   } else {
     out.push({ kind: "good", t: `Savings rate ${pct(savingsRate)} — above the 15% guideline`,
@@ -241,8 +308,8 @@ function buildInsights(s, R) {
   const milestones = [[30,1],[35,2],[40,3],[45,4],[50,6],[55,7],[60,8],[67,10]];
   let target = null;
   for (const [ma, mult] of milestones) if (a >= ma) target = mult;
-  if (target !== null) {
-    const salary = tierAt([...s.salaryTiers].sort((x,y)=>x.start-y.start), 26, "salary");
+  if (target !== null && s.balance > 0) {
+    const salary = tierAt([...s.salaryTiers].sort((x,y)=>x.start-y.start), R.N, "salary");
     const ratio = s.balance / salary;
     if (ratio >= target) out.push({ kind: "good", t: `On track: ${ratio.toFixed(1)}× salary saved (milestone: ${target}×)`,
       p: `Fidelity's age-based milestones suggest ${target}× your salary by age ${a}. You're at ${ratio.toFixed(1)}×.`,
@@ -259,13 +326,12 @@ function buildInsights(s, R) {
   }
 
   if (a >= 50) {
-    const wages = R.grossYTD;
-    const mustRoth = wages > R.L.rothCatchUpWageThreshold;
+    const mustRoth = R.grossYTD > R.L.rothCatchUpWageThreshold;
     out.push({ kind: "info", t: "Catch-up contributions unlocked",
-      p: `At ${a}, you can defer an extra ${money(a>=60&&a<=63?R.L.catchUp60to63:R.L.catchUp50)} this year.${mustRoth ? " Because your prior-year wages exceed " + money(R.L.rothCatchUpWageThreshold) + ", SECURE 2.0 requires catch-up contributions to be Roth starting 2026." : ""}`,
+      p: `At ${a}, you can defer an extra ${money(a>=60&&a<=63?R.L.catchUp60to63:R.L.catchUp50)} this year.${mustRoth ? " Because your wages exceed " + money(R.L.rothCatchUpWageThreshold) + ", SECURE 2.0 requires catch-up contributions to be Roth starting 2026." : ""}`,
       src: "IRS COLA notice; SECURE 2.0 Act §603." });
   } else if (a >= 45) {
-    out.push({ kind: "info", t: `Catch-up contributions start at 50`,
+    out.push({ kind: "info", t: "Catch-up contributions start at 50",
       p: `In ${50 - a} years you can add ${money(R.L.catchUp50)}+ on top of the regular limit — worth building into your long-range plan.`,
       src: "IRS retirement topics — catch-up contributions." });
   }
@@ -291,14 +357,16 @@ function buildInsights(s, R) {
 /* ============================================================
    RENDER
    ============================================================ */
+const CHART_GRID = "rgba(255,255,255,.06)", CHART_TICK = "#93a3c4";
+
 function renderAll() {
   results = compute(state);
   const R = results, s = state;
   $("brandYear").textContent = s.planYear;
-  $("dashYear").textContent = s.planYear;
 
   // pay strip
   const strip = $("paystrip"); strip.innerHTML = "";
+  strip.classList.toggle("dense", R.N > 30);
   for (const r of R.rows) {
     const cell = document.createElement("div");
     const contributing = r.preD + r.rothD > 0.005;
@@ -308,13 +376,26 @@ function renderAll() {
     cell.tabIndex = 0;
     cell.dataset.tip = `Pay #${r.p} · ${r.date.toLocaleDateString("en-US",{month:"short",day:"numeric"})}\nGross ${money2(r.g)}\n401(k) ${money2(r.preD + r.rothD)}${r.bon ? "\nBonus " + money(r.bon) : ""}`;
     const fill = document.createElement("div"); fill.className = "fill";
-    fill.style.height = contributing ? Math.max(14, Math.min(100, (r.preD + r.rothD) / full * 100)) + "%" : "0";
+    fill.style.height = contributing ? Math.max(14, Math.min(100, (r.preD + r.rothD) / (full || 1) * 100)) + "%" : "0";
     cell.appendChild(fill); strip.appendChild(cell);
   }
 
+  // donut
+  const used = Math.min(1, R.defTotal / R.lim);
+  $("donutPct").textContent = Math.round(used * 100) + "%";
+  $("donutCaption").innerHTML = used >= 0.999
+    ? `You're using your entire ${money(R.lim)} limit — fully maxed. The IRS usually raises the limit each year, so revisit every January.`
+    : `You're contributing ${money(R.defTotal)} of the ${money(R.lim)} the IRS allows — ${money(R.lim - R.defTotal)} of tax-advantaged room is unused. Even +1% per paycheck compounds into real money.`;
+  if (charts.donut) charts.donut.destroy();
+  charts.donut = new Chart($("limitDonut"), {
+    type: "doughnut",
+    data: { datasets: [{ data: [used, 1 - used], backgroundColor: ["#3ddc97", "#1c2740"], borderWidth: 0 }] },
+    options: { cutout: "74%", plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+  });
+
   // stats
   $("stLimit").textContent = money(R.lim);
-  $("stLimitNote").textContent = `402(g)${myLimit(s,R.L)>R.L.deferralLimit402g?" + catch-up":""} · IRS ${R.L._year}`;
+  $("stLimitNote").textContent = `402(g)${R.lim > R.L.deferralLimit402g ? " + catch-up" : ""} · IRS ${R.L._year}`;
   $("stDeferral").textContent = money(R.defTotal);
   const room = R.lim - R.defTotal;
   $("stDeferralNote").innerHTML = room < 1 ? `<span class="pill good">Maxed out</span>` :
@@ -327,9 +408,16 @@ function renderAll() {
   $("stBalance").textContent = money(R.atRet);
   $("stBalanceNote").textContent = `at age ${s.retireAge}, ${s.expReturn}% return`;
 
-  // insights
+  // learn cards
+  $("learnRow").innerHTML = LEARN.map(l =>
+    `<button class="learn" data-term="${l.term}">
+       <span class="ic"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="${l.icon}"/></svg></span>
+       <span class="lt">${l.lt}</span><span class="ls">${l.ls}</span></button>`).join("");
+
   $("insights").innerHTML = buildInsights(s, R).map(i =>
     `<div class="insight ${i.kind}"><div><div class="t">${i.t}</div><p>${i.p}</p><div class="src">Source: ${i.src}</div></div></div>`).join("");
+
+  $("paySub").textContent = `All ${R.N} pays (${FREQ[s.frequency].label}), auto-capped at your IRS limit. Amber rows show where the cap kicks in.`;
 
   renderPayTable(R);
   renderScenarios();
@@ -341,8 +429,7 @@ function renderPayTable(R) {
   const h = ["Pay #","Date","Gross","Pre-tax","Roth","After-tax","Deferral YTD","Room left","Match","SS tax","Medicare","Take-home"];
   let html = "<thead><tr>" + h.map(x => `<th>${x}</th>`).join("") + "</tr></thead><tbody>";
   for (const r of R.rows) {
-    const capRow = R.cappedAt === r.p;
-    html += `<tr${capRow ? ' class="capped"' : ""}><td>${r.p}${r.bon ? " ●" : ""}</td>
+    html += `<tr${R.cappedAt === r.p ? ' class="capped"' : ""}><td>${r.p}${r.bon ? " ●" : ""}</td>
       <td>${r.date.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</td>
       <td>${money2(r.g)}</td><td>${money2(r.preD)}</td><td>${money2(r.rothD)}</td><td>${money2(r.afterD)}</td>
       <td>${money(r.defYTD)}</td><td>${money(Math.max(0,r.room))}</td><td>${money2(r.match)}</td>
@@ -391,12 +478,14 @@ function renderScenarios() {
     type: "bar",
     data: { labels: computed.map(c => c.name),
       datasets: [
-        { label: "Take-home", data: computed.map(c => c.takeHome), backgroundColor: "#0e7c5b" },
-        { label: "Retirement dollars (deferral+after-tax+match)", data: computed.map(c => c.additions), backgroundColor: "#13273d" },
-        { label: "Federal tax saved", data: computed.map(c => c.taxSaved), backgroundColor: "#b9770e" }
+        { label: "Take-home", data: computed.map(c => c.takeHome), backgroundColor: "#3ddc97", borderRadius: 6 },
+        { label: "Retirement dollars", data: computed.map(c => c.additions), backgroundColor: "#6d8dff", borderRadius: 6 },
+        { label: "Federal tax saved", data: computed.map(c => c.taxSaved), backgroundColor: "#f0b350", borderRadius: 6 }
       ] },
-    options: { responsive: true, plugins: { legend: { position: "bottom" } },
-      scales: { y: { ticks: { callback: v => "$" + (v/1000) + "k" } } } }
+    options: { responsive: true,
+      plugins: { legend: { position: "bottom", labels: { color: CHART_TICK } } },
+      scales: { y: { ticks: { color: CHART_TICK, callback: v => "$" + (v/1000) + "k" }, grid: { color: CHART_GRID } },
+                x: { ticks: { color: CHART_TICK }, grid: { display: false } } } }
   });
 }
 
@@ -406,15 +495,17 @@ function renderProjection(R) {
   $("prjIncome").textContent = money(R.atRet * 0.04);
   $("prjContrib").textContent = money(R.totalContrib);
   if (charts.prj) charts.prj.destroy();
+  const grad = $("prjChart").getContext("2d").createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0, "rgba(61,220,151,.35)"); grad.addColorStop(1, "rgba(61,220,151,0)");
   charts.prj = new Chart($("prjChart"), {
     type: "line",
     data: { labels: R.proj.map(r => r.age),
       datasets: [{ label: "Balance", data: R.proj.map(r => r.balance),
-        borderColor: "#0e7c5b", backgroundColor: "rgba(14,124,91,.12)", fill: true, tension: .25, pointRadius: 0 }] },
+        borderColor: "#3ddc97", backgroundColor: grad, fill: true, tension: .3, pointRadius: 0, borderWidth: 2.5 }] },
     options: { responsive: true, plugins: { legend: { display: false },
         tooltip: { callbacks: { title: it => "Age " + it[0].label, label: it => money(it.raw) } } },
-      scales: { y: { ticks: { callback: v => "$" + (v/1e6).toFixed(1) + "M" } },
-        x: { title: { display: true, text: "Age" } } } }
+      scales: { y: { ticks: { color: CHART_TICK, callback: v => v >= 1e6 ? "$" + (v/1e6).toFixed(1) + "M" : "$" + (v/1e3).toFixed(0) + "k" }, grid: { color: CHART_GRID } },
+        x: { title: { display: true, text: "Age", color: CHART_TICK }, ticks: { color: CHART_TICK }, grid: { display: false } } } }
   });
 }
 
@@ -426,7 +517,7 @@ function renderIRS(R) {
     ["Catch-up (50+) / enhanced (60–63)", money(L.catchUp50) + " / " + money(L.catchUp60to63)],
     ["Total additions — 415(c)", money(L.totalAdditions415c)],
     ["Social Security wage base", money(L.ssWageBase)],
-    ["Standard deduction (" + state.filing + ")", money(L.standardDeduction[state.filing])]
+    ["Standard deduction (" + (state.filing === "single" ? "single" : "married") + ")", money(L.standardDeduction[state.filing])]
   ].map(([k, v]) => `${k}: <strong>${v}</strong>`).join("<br>");
   $("irsSource").textContent = "Loaded automatically from irs-limits.json. Values follow the IRS annual COLA notice and SSA wage-base announcement; the file is versioned so one yearly update reaches every user.";
 }
@@ -436,7 +527,7 @@ function renderIRS(R) {
    ============================================================ */
 function bindInputs() {
   const simple = { planYear: "planYear", filing: "filing", birthYear: "birthYear",
-    firstPay: "firstPay", bonusPct: "bonusPct", bonusPeriod: "bonusPeriod",
+    frequency: "frequency", firstPay: "firstPay", bonusPct: "bonusPct", bonusPeriod: "bonusPeriod",
     matchRate: "matchRate", matchCap: "matchCap", trueUp: "trueUp",
     balance: "balance", retireAge: "retireAge", expReturn: "expReturn", contribGrowth: "contribGrowth" };
   const yearSel = $("planYear");
@@ -448,25 +539,32 @@ function bindInputs() {
     el.value = state[key];
     el.addEventListener("change", () => {
       state[key] = el.type === "number" || id === "planYear" ? +el.value : el.value;
+      if (id === "frequency") syncFrequencyUI();
       afterEdit();
     });
   }
+  syncFrequencyUI();
   drawTierTables();
   $("addSalary").onclick = () => { state.salaryTiers.push({ start: 1, salary: 0 }); drawTierTables(); };
   $("addRate").onclick = () => { state.rateTiers.push({ start: 1, pre: 0, roth: 0, after: 0 }); drawTierTables(); };
+}
+function syncFrequencyUI() {
+  const fixed = state.frequency === "semimonthly" || state.frequency === "monthly";
+  $("firstPayWrap").style.display = fixed ? "none" : "";
+  $("bonusPeriod").max = FREQ[state.frequency].n;
 }
 function drawTierTables() {
   const st = $("salaryTable").querySelector("tbody"); st.innerHTML = "";
   state.salaryTiers.forEach((t, i) => {
     st.insertAdjacentHTML("beforeend",
-      `<tr><td><input type="number" min="1" max="26" value="${t.start}" data-i="${i}" data-k="start" data-t="salary"></td>
+      `<tr><td><input type="number" min="1" value="${t.start}" data-i="${i}" data-k="start" data-t="salary"></td>
        <td><input type="number" value="${t.salary}" data-i="${i}" data-k="salary" data-t="salary"></td>
        <td>${i > 0 ? `<button class="rowbtn" data-del-salary="${i}" aria-label="Remove">×</button>` : ""}</td></tr>`);
   });
   const rt = $("rateTable").querySelector("tbody"); rt.innerHTML = "";
   state.rateTiers.forEach((t, i) => {
     rt.insertAdjacentHTML("beforeend",
-      `<tr><td><input type="number" min="1" max="26" value="${t.start}" data-i="${i}" data-k="start" data-t="rate"></td>
+      `<tr><td><input type="number" min="1" value="${t.start}" data-i="${i}" data-k="start" data-t="rate"></td>
        <td><input type="number" step="0.5" value="${t.pre}" data-i="${i}" data-k="pre" data-t="rate"></td>
        <td><input type="number" step="0.5" value="${t.roth}" data-i="${i}" data-k="roth" data-t="rate"></td>
        <td><input type="number" step="0.5" value="${t.after}" data-i="${i}" data-k="after" data-t="rate"></td>
@@ -481,12 +579,18 @@ function drawTierTables() {
   document.querySelectorAll("[data-del-salary]").forEach(b => b.onclick = () => { state.salaryTiers.splice(+b.dataset.delSalary, 1); drawTierTables(); afterEdit(); });
   document.querySelectorAll("[data-del-rate]").forEach(b => b.onclick = () => { state.rateTiers.splice(+b.dataset.delRate, 1); drawTierTables(); afterEdit(); });
 }
-function afterEdit() { persist(); renderAll(); }
+function afterEdit() { persist(); renderAllSafe(); }
 
 /* ============================================================
-   PERSISTENCE — localStorage always; Supabase when signed in
+   PERSISTENCE
    ============================================================ */
-function load() { try { return JSON.parse(localStorage.getItem("maxout.plan")); } catch { return null; } }
+function load() {
+  try {
+    const v = JSON.parse(localStorage.getItem("maxout.plan"));
+    if (v && !v.frequency) v.frequency = "biweekly"; // migrate v1 plans
+    return v;
+  } catch { return null; }
+}
 let saveTimer = null;
 function persist() {
   localStorage.setItem("maxout.plan", JSON.stringify(state));
@@ -560,8 +664,8 @@ function setupAuth() {
   $("bannerSignup").onclick = () => openAuth("signup");
   $("tabSignin").onclick = () => setAuthMode("signin");
   $("tabSignup").onclick = () => setAuthMode("signup");
-  document.querySelector("#authModal [data-close]").onclick = () => $("authModal").classList.remove("open");
-  $("authModal").addEventListener("click", e => { if (e.target.id === "authModal") $("authModal").classList.remove("open"); });
+  document.querySelectorAll(".modal [data-close]").forEach(b => b.onclick = () => b.closest(".modal").classList.remove("open"));
+  document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("open"); }));
 
   $("authSubmit").onclick = async () => {
     const email = $("authEmail").value.trim(), pass = $("authPass").value;
@@ -617,12 +721,12 @@ function makePDF() {
   const R = results, s = state;
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  const G = [14, 124, 91], INK = [15, 29, 46];
+  const G = [43, 184, 124], INK = [15, 23, 42];
   doc.setFillColor(...INK); doc.rect(0, 0, 210, 30, "F");
   doc.setTextColor(255).setFont("helvetica", "bold").setFontSize(18);
   doc.text(`MaxOut — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
   doc.setFontSize(9).setFont("helvetica", "normal");
-  doc.text(`Generated ${new Date().toLocaleDateString()} · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
+  doc.text(`Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
 
   doc.setTextColor(...INK).setFontSize(12).setFont("helvetica", "bold");
   doc.text("Plan summary", 14, 40);
@@ -639,7 +743,7 @@ function makePDF() {
       ["Federal marginal / effective rate", pct(R.marginal) + " / " + pct(R.effRate)],
       ["Federal tax saved by pre-tax deferrals", money(R.taxSaved)],
       ["Rate that maxes the limit exactly", pct(R.maxRate)],
-      ["Social Security tax stops", R.ssStopsAt ? "Pay #" + R.ssStopsAt : "Not reached"],
+      ["Social Security tax stops", R.ssStopsAt ? "Pay #" + R.ssStopsAt + " of " + R.N : "Not reached"],
       ["Projected balance at age " + s.retireAge, money(R.atRet)],
       ["Est. retirement income (4% rule)", money(R.atRet * 0.04)]
     ]
@@ -675,13 +779,17 @@ function makePDF() {
 }
 
 /* ============================================================
-   NAV + BOOT
+   NAV + GLOSSARY WIRING + BOOT
    ============================================================ */
 function renderAllSafe() { try { renderAll(); } catch (e) { console.error(e); toast("Something went wrong rendering — check inputs"); } }
 document.querySelectorAll(".nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".nav button").forEach(x => x.classList.toggle("active", x === b));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + b.dataset.view));
   window.scrollTo({ top: 0 });
+});
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-term]");
+  if (btn) { e.preventDefault(); openGloss(btn.dataset.term); }
 });
 $("reportBtn").onclick = makePDF;
 
@@ -690,7 +798,7 @@ $("reportBtn").onclick = makePDF;
     const r = await fetch("irs-limits.json", { cache: "no-store" });
     if (r.ok) IRS = await r.json();
   } catch { /* offline — fallback stays */ }
-  if (!load()) $("guestBanner").hidden = false; else $("guestBanner").hidden = false;
+  $("guestBanner").hidden = false;
   bindInputs();
   setupAuth();
   renderAllSafe();

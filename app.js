@@ -1,4 +1,4 @@
-/* MaxOut — 401(k) Contribution Planner
+/* Planwise — Smart Retirement Planning · 401(k) Contribution Planner
    Static app: works fully offline/guest via localStorage.
    Optional Supabase backend for accounts + sync (see README.md). */
 "use strict";
@@ -58,6 +58,7 @@ function payDates(s) {
    STATE — simple, generic example numbers (edit everything!)
    ============================================================ */
 const DEFAULT_STATE = {
+  calculated: false,
   planYear: 2026, filing: "single", birthYear: 1990,
   frequency: "biweekly", firstPay: "2026-01-09",
   bonusPct: 0, bonusPeriod: 6,
@@ -218,7 +219,7 @@ function computeScenario(s, R, sc) {
    GLOSSARY — beginner-friendly, opened from any "?" button
    ============================================================ */
 const GLOSSARY = {
-  whatIsThis: { t: "What is this tool?", b: `MaxOut plans your <strong>401(k)</strong> — the retirement account you fund straight from your paycheck, usually with free matching money from your employer.<br><br>You tell it how you're paid and what % you contribute; it shows the IRS limits, taxes, and what it all compounds into by retirement.<div class="ex">Rule one of retirement saving: <strong>never leave employer match on the table.</strong> It's an instant 25–100% return.</div>` },
+  whatIsThis: { t: "What is this tool?", b: `Planwise plans your <strong>401(k)</strong> — the retirement account you fund straight from your paycheck, usually with free matching money from your employer.<br><br>You tell it how you're paid and what % you contribute; it shows the IRS limits, taxes, and what it all compounds into by retirement.<div class="ex">Rule one of retirement saving: <strong>never leave employer match on the table.</strong> It's an instant 25–100% return.</div>` },
   payStrip: { t: "Reading this chart", b: `Each bar is one paycheck of the year, in order. The <strong style="color:var(--mint)">green fill</strong> shows how much of that check goes into your 401(k).<br><br>An <strong style="color:var(--amber)">amber bar</strong> means you hit the annual IRS limit mid-paycheck — contributions stop there. A <strong style="color:var(--red)">red edge</strong> marks the paycheck where Social Security tax stops for the year (see "Why paychecks grow late in the year").` },
   limit402g: { t: "The IRS limit — 402(g)", b: `Each year the IRS caps how much <strong>you</strong> can put into a 401(k) from your salary (pre-tax + Roth combined). For 2026 it's <strong>$24,500</strong>, and it usually rises a little every year.<br><br>Age 50+? You get extra "catch-up" room. Employer match does <strong>not</strong> count against this limit — it has its own, much higher ceiling (the 415(c) limit).` },
   deferral: { t: "Deferral", b: `"Deferral" is just the formal word for <strong>the money you send from your paycheck into your 401(k)</strong>. You're deferring pay until retirement.<br><br>It comes in two flavors — pre-tax and Roth — and the IRS annual limit applies to the two combined.` },
@@ -355,15 +356,117 @@ function buildInsights(s, R) {
 }
 
 /* ============================================================
+   SAFE CHART CREATION — a missing/blocked chart library or a
+   canvas problem must never take down the rest of the app.
+   ============================================================ */
+function makeChart(canvasId, config, key) {
+  const cnv = $(canvasId);
+  if (!cnv) return;
+  try {
+    if (charts[key]) { charts[key].destroy(); charts[key] = null; }
+    if (typeof window.Chart === "undefined") throw new Error("chart library unavailable");
+    charts[key] = new Chart(cnv, config);
+    cnv.style.display = "";
+    const fb = cnv.parentElement.querySelector(".chart-fallback");
+    if (fb) fb.remove();
+  } catch (e) {
+    console.error("chart '" + key + "':", e);
+    cnv.style.display = "none";
+    if (!cnv.parentElement.querySelector(".chart-fallback")) {
+      const d = document.createElement("div");
+      d.className = "chart-fallback";
+      d.textContent = "Chart couldn't load here — the numbers above are still correct.";
+      cnv.parentElement.appendChild(d);
+    }
+  }
+}
+
+/* ============================================================
+   GATING — results stay hidden until the user calculates
+   ============================================================ */
+function gate() {
+  const on = !!state.calculated;
+  document.querySelectorAll("[data-gate]").forEach(el => el.hidden = on);
+  document.querySelectorAll("[data-gated]").forEach(el => el.hidden = !on);
+}
+
+/* ============================================================
+   VALIDATION — friendly, specific, points at the field
+   ============================================================ */
+function validate(s) {
+  const errs = [];
+  const N = (FREQ[s.frequency] || FREQ.biweekly).n;
+  const add = (msg, ids = []) => errs.push({ msg, ids });
+
+  const sal0 = s.salaryTiers[0];
+  if (!sal0 || !(+sal0.salary > 0))
+    add("Annual salary is missing — enter your yearly pay before taxes (e.g. 85000).", ["salaryTable"]);
+  s.salaryTiers.forEach((t, i) => {
+    if (i > 0 && !(+t.salary > 0)) add(`Salary row ${i + 1} has no amount — fill it in or remove the row.`, ["salaryTable"]);
+    if (+t.start < 1 || +t.start > N) add(`Salary row ${i + 1}: "From pay #" must be between 1 and ${N} for your pay frequency.`, ["salaryTable"]);
+  });
+
+  if (!(+s.birthYear >= 1900 && +s.birthYear <= s.planYear - 15))
+    add("Birth year looks off — enter a four-digit year (e.g. 1990).", ["birthYear"]);
+
+  if ((s.frequency === "weekly" || s.frequency === "biweekly")) {
+    const d = new Date(s.firstPay + "T12:00:00");
+    if (!s.firstPay || isNaN(d)) add("First pay date is missing — pick your first paycheck of the year.", ["firstPay"]);
+    else if (d.getFullYear() !== +s.planYear || d.getMonth() > 0)
+      add(`First pay date should be in January ${s.planYear}.`, ["firstPay"]);
+  }
+
+  s.rateTiers.forEach((t, i) => {
+    const pre = +t.pre, roth = +t.roth, after = +t.after;
+    if (pre < 0 || roth < 0 || after < 0) add(`Rate row ${i + 1}: percentages can't be negative.`, ["rateTable"]);
+    if (pre + roth > 100) add(`Rate row ${i + 1}: pre-tax + Roth can't exceed 100% of pay.`, ["rateTable"]);
+    if (+t.start < 1 || +t.start > N) add(`Rate row ${i + 1}: "From pay #" must be between 1 and ${N}.`, ["rateTable"]);
+  });
+
+  if (+s.bonusPct < 0 || +s.bonusPct > 200) add("Bonus % looks off — enter it as a percent of salary (e.g. 10).", ["bonusPct"]);
+  if (+s.matchRate < 0 || +s.matchRate > 200) add("Match rate looks off — 50 means 50 cents per dollar you contribute.", ["matchRate"]);
+  if (+s.matchCap < 0 || +s.matchCap > 100) add("Match cap looks off — it's the % of your pay the match applies to (e.g. 6).", ["matchCap"]);
+
+  if (!(+s.retireAge > age(s)))
+    add(`Retirement age must be later than your current age (${age(s)}).`, ["retireAge"]);
+  if (+s.balance < 0) add("Current balance can't be negative — use 0 if you're just starting.", ["balance"]);
+  if (+s.expReturn < -20 || +s.expReturn > 30) add("Expected return looks off — most planners use 5 to 9 (percent per year).", ["expReturn"]);
+  if (+s.contribGrowth < 0 || +s.contribGrowth > 30) add("Contribution growth looks off — 2 to 3 (percent) is typical.", ["contribGrowth"]);
+
+  return errs;
+}
+function showValidation(errs) {
+  const card = $("valCard"), list = $("valList");
+  document.querySelectorAll(".invalid").forEach(el => el.classList.remove("invalid"));
+  if (!errs.length) { card.hidden = true; return; }
+  list.innerHTML = errs.map(e => `<li data-focus="${e.ids[0] || ""}">${e.msg}</li>`).join("");
+  card.hidden = false;
+  errs.forEach(e => e.ids.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    if (el.tagName === "TABLE") el.querySelectorAll("input").forEach(i => i.classList.add("invalid"));
+    else el.classList.add("invalid");
+  }));
+  list.querySelectorAll("li").forEach(li => li.onclick = () => {
+    const el = $(li.dataset.focus);
+    if (el) (el.tagName === "TABLE" ? el.querySelector("input") : el).focus({ preventScroll: false });
+  });
+}
+
+/* ============================================================
    RENDER
    ============================================================ */
 const CHART_GRID = "rgba(255,255,255,.06)", CHART_TICK = "#93a3c4";
 
 function renderAll() {
+  gate();
+  $("brandYear").textContent = state.planYear;
+  renderIRSFromState();               // IRS readout is useful before calculating too
+  if (!state.calculated) { renderHeroStrip(); return; }
   results = compute(state);
   const R = results, s = state;
-  $("brandYear").textContent = s.planYear;
 
+  renderHeroStrip();
   // pay strip
   const strip = $("paystrip"); strip.innerHTML = "";
   strip.classList.toggle("dense", R.N > 30);
@@ -386,12 +489,11 @@ function renderAll() {
   $("donutCaption").innerHTML = used >= 0.999
     ? `You're using your entire ${money(R.lim)} limit — fully maxed. The IRS usually raises the limit each year, so revisit every January.`
     : `You're contributing ${money(R.defTotal)} of the ${money(R.lim)} the IRS allows — ${money(R.lim - R.defTotal)} of tax-advantaged room is unused. Even +1% per paycheck compounds into real money.`;
-  if (charts.donut) charts.donut.destroy();
-  charts.donut = new Chart($("limitDonut"), {
+  makeChart("limitDonut", {
     type: "doughnut",
     data: { datasets: [{ data: [used, 1 - used], backgroundColor: ["#3ddc97", "#1c2740"], borderWidth: 0 }] },
     options: { cutout: "74%", plugins: { legend: { display: false }, tooltip: { enabled: false } } }
-  });
+  }, "donut");
 
   // stats
   $("stLimit").textContent = money(R.lim);
@@ -419,10 +521,24 @@ function renderAll() {
 
   $("paySub").textContent = `All ${R.N} pays (${FREQ[s.frequency].label}), auto-capped at your IRS limit. Amber rows show where the cap kicks in.`;
 
-  renderPayTable(R);
-  renderScenarios();
-  renderProjection(R);
-  renderIRS(R);
+  const failed = [];
+  const sec = (name, fn) => { try { fn(); } catch (e) { console.error("render " + name + ":", e); failed.push(name); } };
+  sec("paychecks", () => renderPayTable(R));
+  sec("scenarios", () => renderScenarios());
+  sec("projection", () => renderProjection(R));
+  sec("IRS figures", () => renderIRS(R));
+  if (failed.length) toast("Trouble rendering: " + failed.join(", ") + " — everything else is up to date");
+}
+
+function renderHeroStrip() {
+  const el = $("heroStrip");
+  if (!el || el.childElementCount) return;
+  for (let i = 0; i < 26; i++) {
+    const c = document.createElement("div"); c.className = "cell";
+    const f = document.createElement("div"); f.className = "fill";
+    f.style.height = (28 + 44 * Math.abs(Math.sin(i * 0.5))) + "%";
+    c.appendChild(f); el.appendChild(c);
+  }
 }
 
 function renderPayTable(R) {
@@ -473,8 +589,7 @@ function renderScenarios() {
     persist(); renderScenarios();
   }));
 
-  if (charts.scn) charts.scn.destroy();
-  charts.scn = new Chart($("scnChart"), {
+  makeChart("scnChart", {
     type: "bar",
     data: { labels: computed.map(c => c.name),
       datasets: [
@@ -486,7 +601,7 @@ function renderScenarios() {
       plugins: { legend: { position: "bottom", labels: { color: CHART_TICK } } },
       scales: { y: { ticks: { color: CHART_TICK, callback: v => "$" + (v/1000) + "k" }, grid: { color: CHART_GRID } },
                 x: { ticks: { color: CHART_TICK }, grid: { display: false } } } }
-  });
+  }, "scn");
 }
 
 function renderProjection(R) {
@@ -494,21 +609,28 @@ function renderProjection(R) {
   $("prjBalance").textContent = money(R.atRet);
   $("prjIncome").textContent = money(R.atRet * 0.04);
   $("prjContrib").textContent = money(R.totalContrib);
-  if (charts.prj) charts.prj.destroy();
-  const grad = $("prjChart").getContext("2d").createLinearGradient(0, 0, 0, 260);
-  grad.addColorStop(0, "rgba(61,220,151,.35)"); grad.addColorStop(1, "rgba(61,220,151,0)");
-  charts.prj = new Chart($("prjChart"), {
+  let bg = "rgba(61,220,151,.18)";
+  try {
+    const ctx = $("prjChart").getContext("2d");
+    if (ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 0, 260);
+      grad.addColorStop(0, "rgba(61,220,151,.35)"); grad.addColorStop(1, "rgba(61,220,151,0)");
+      bg = grad;
+    }
+  } catch (e) { /* gradient is decorative */ }
+  makeChart("prjChart", {
     type: "line",
     data: { labels: R.proj.map(r => r.age),
       datasets: [{ label: "Balance", data: R.proj.map(r => r.balance),
-        borderColor: "#3ddc97", backgroundColor: grad, fill: true, tension: .3, pointRadius: 0, borderWidth: 2.5 }] },
+        borderColor: "#3ddc97", backgroundColor: bg, fill: true, tension: .3, pointRadius: 0, borderWidth: 2.5 }] },
     options: { responsive: true, plugins: { legend: { display: false },
         tooltip: { callbacks: { title: it => "Age " + it[0].label, label: it => money(it.raw) } } },
       scales: { y: { ticks: { color: CHART_TICK, callback: v => v >= 1e6 ? "$" + (v/1e6).toFixed(1) + "M" : "$" + (v/1e3).toFixed(0) + "k" }, grid: { color: CHART_GRID } },
         x: { title: { display: true, text: "Age", color: CHART_TICK }, ticks: { color: CHART_TICK }, grid: { display: false } } } }
-  });
+  }, "prj");
 }
 
+function renderIRSFromState() { renderIRS({ L: limitsFor(state.planYear) }); }
 function renderIRS(R) {
   const L = R.L;
   $("irsYearLabel").textContent = L._year;
@@ -579,21 +701,32 @@ function drawTierTables() {
   document.querySelectorAll("[data-del-salary]").forEach(b => b.onclick = () => { state.salaryTiers.splice(+b.dataset.delSalary, 1); drawTierTables(); afterEdit(); });
   document.querySelectorAll("[data-del-rate]").forEach(b => b.onclick = () => { state.rateTiers.splice(+b.dataset.delRate, 1); drawTierTables(); afterEdit(); });
 }
-function afterEdit() { persist(); renderAllSafe(); }
+function afterEdit() {
+  persist();
+  const errs = validate(state);
+  showValidation(errs);
+  if (!errs.length) renderAllSafe();
+}
 
 /* ============================================================
    PERSISTENCE
    ============================================================ */
 function load() {
   try {
-    const v = JSON.parse(localStorage.getItem("maxout.plan"));
-    if (v && !v.frequency) v.frequency = "biweekly"; // migrate v1 plans
+    let raw = localStorage.getItem("planwise.plan");
+    if (!raw) {                                   // migrate from the MaxOut beta key
+      raw = localStorage.getItem("maxout.plan");
+      if (raw) { localStorage.setItem("planwise.plan", raw); localStorage.removeItem("maxout.plan"); }
+    }
+    const v = JSON.parse(raw);
+    if (v && !v.frequency) v.frequency = "biweekly";           // migrate v1 plans
+    if (v && v.calculated === undefined) v.calculated = true;  // migrate v2 plans
     return v;
   } catch { return null; }
 }
 let saveTimer = null;
 function persist() {
-  localStorage.setItem("maxout.plan", JSON.stringify(state));
+  localStorage.setItem("planwise.plan", JSON.stringify(state));
   if (session) { clearTimeout(saveTimer); saveTimer = setTimeout(cloudSave, 900); }
 }
 
@@ -687,7 +820,7 @@ function setupAuth() {
       if (authMode === "signup") { await cloudSave(); toast("Account created — your plan is saved to it"); }
       else {
         const cloud = await cloudLoad();
-        if (cloud) { state = cloud; localStorage.setItem("maxout.plan", JSON.stringify(state)); location.reload(); }
+        if (cloud) { state = cloud; localStorage.setItem("planwise.plan", JSON.stringify(state)); location.reload(); }
         else { await cloudSave(); toast("Signed in — plan synced"); }
       }
       refreshAuthUI();
@@ -698,7 +831,7 @@ function setupAuth() {
 }
 async function syncDown() {
   const cloud = await cloudLoad();
-  if (cloud) { state = cloud; localStorage.setItem("maxout.plan", JSON.stringify(state)); renderAllSafe(); }
+  if (cloud) { state = cloud; localStorage.setItem("planwise.plan", JSON.stringify(state)); renderAllSafe(); }
 }
 function openAuth(mode) { setAuthMode(mode); $("authModal").classList.add("open"); }
 function setAuthMode(m) {
@@ -718,13 +851,15 @@ function refreshAuthUI() {
    PDF REPORT
    ============================================================ */
 function makePDF() {
+  if (!state.calculated || !results) { toast("Calculate your plan first — then the report has something to say"); goto("inputs"); return; }
+  if (!window.jspdf || !window.jspdf.jsPDF) { toast("PDF library couldn't load — check your connection and refresh"); return; }
   const R = results, s = state;
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const G = [43, 184, 124], INK = [15, 23, 42];
   doc.setFillColor(...INK); doc.rect(0, 0, 210, 30, "F");
   doc.setTextColor(255).setFont("helvetica", "bold").setFontSize(18);
-  doc.text(`MaxOut — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
+  doc.text(`Planwise — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
   doc.setFontSize(9).setFont("helvetica", "normal");
   doc.text(`Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
 
@@ -774,19 +909,44 @@ function makePDF() {
   });
   doc.setFontSize(7).setTextColor(120);
   doc.text("Estimates for planning only — not tax or investment advice. Verify IRS figures at irs.gov and plan rules in your Summary Plan Description.", 14, 290);
-  doc.save(`MaxOut_${s.planYear}_plan.pdf`);
+  doc.save(`Planwise_${s.planYear}_plan.pdf`);
   toast("Report downloaded");
 }
 
 /* ============================================================
    NAV + GLOSSARY WIRING + BOOT
    ============================================================ */
-function renderAllSafe() { try { renderAll(); } catch (e) { console.error(e); toast("Something went wrong rendering — check inputs"); } }
-document.querySelectorAll(".nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".nav button").forEach(x => x.classList.toggle("active", x === b));
-  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + b.dataset.view));
+function renderAllSafe() {
+  try { renderAll(); }
+  catch (e) {
+    console.error(e);
+    toast("Couldn't update the results (" + (e.message || "unknown error") + ") — your inputs are saved");
+  }
+}
+function goto(view) {
+  document.querySelectorAll(".nav button").forEach(x => x.classList.toggle("active", x.dataset.view === view));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
   window.scrollTo({ top: 0 });
+}
+document.querySelectorAll(".nav button").forEach(b => b.onclick = () => goto(b.dataset.view));
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-goto]");
+  if (g) goto(g.dataset.goto);
 });
+function runCalculate() {
+  const errs = validate(state);
+  showValidation(errs);
+  if (errs.length) {
+    toast(errs.length === 1 ? "One thing needs fixing — see the red card" : errs.length + " things need fixing — see the red card");
+    if ($("valCard").scrollIntoView) $("valCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  state.calculated = true;
+  persist();
+  renderAllSafe();
+  goto("dashboard");
+  toast("Your plan is ready");
+}
 document.addEventListener("click", e => {
   const btn = e.target.closest("[data-term]");
   if (btn) { e.preventDefault(); openGloss(btn.dataset.term); }
@@ -801,5 +961,20 @@ $("reportBtn").onclick = makePDF;
   $("guestBanner").hidden = false;
   bindInputs();
   setupAuth();
-  renderAllSafe();
+  $("calcBtn").onclick = runCalculate;
+  $("ctaStart").onclick = () => goto("inputs");
+  $("ctaStart2").onclick = () => goto("inputs");
+  $("ctaSample").onclick = () => {
+    state = structuredClone(DEFAULT_STATE);
+    state.calculated = true;
+    persist();
+    document.querySelectorAll("#view-inputs input,#view-inputs select").forEach(el => {
+      if (el.id && state[el.id] !== undefined) el.value = state[el.id];
+    });
+    drawTierTables();
+    renderAllSafe();
+    goto("dashboard");
+    toast("Sample plan loaded — explore, then make it yours in Inputs");
+  };
+  if (state.calculated) renderAllSafe(); else { gate(); renderIRSFromState(); renderHeroStrip(); }
 })();

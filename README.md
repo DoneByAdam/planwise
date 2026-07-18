@@ -1,9 +1,24 @@
-# MaxOut — 401(k) Contribution Planner
+# Planwise — Smart Retirement Planning
 
 A mobile-first web app that plans all 26 biweekly paychecks: auto-caps at the IRS limit, tracks employer match (including match lost to front-loading), computes federal tax savings, compares strategies side by side, projects growth to retirement, and exports a PDF report.
 
 **Try-before-signup:** the app is fully functional with no account — data saves to the device (localStorage). Creating an account syncs the plan to the cloud.
 
+
+
+
+## v4 changes
+
+- Rebranded to **Planwise** with the official logo: transparent-background mark in the header, full logo on the home hero, and real PNG favicons (64/256 + Apple touch icon) extracted from the logo artwork.
+- Saved plans migrate automatically from the old storage key.
+- New asset files: `logo-mark.png`, `logo-full.png`, `favicon.png`, `favicon-256.png`, `apple-touch-icon.png` — deploy them alongside the app files.
+
+## v3 changes
+
+- **Bug fix — "Something went wrong rendering"**: two CDN script URLs pointed at versions that don't exist (verified against the npm registry), so the chart/PDF libraries failed to load and one shared try/catch killed every render. All CDN URLs are now version-and-path-verified on jsDelivr, chart creation degrades gracefully (a note appears instead of a crash if a chart can't load), and rendering is isolated per section so one failure can't take down the rest.
+- **New flow**: Home (what the tool is + privacy promise: encrypted, never shared/sold) → Inputs → **Calculate my plan** button → Results. Result tabs show friendly empty states until the user calculates. A "See a sample plan" button gives instant try-before-you-type.
+- **Validation**: Calculate checks every input and lists exactly what's missing or off in plain English (clickable — jumps to the field, which is highlighted in red). After the first calculation, edits re-validate live and re-render only when valid.
+- Covered by an automated jsdom test suite (29 flow assertions + engine tests across all pay frequencies).
 
 ## v2 changes
 

@@ -106,6 +106,14 @@
         <div class="field"><label for="birthYear">Birth year<button class="info" data-term="catchup">?</button></label><input id="birthYear" type="number" inputmode="numeric">
           <div class="hint">Only used to check catch-up eligibility (extra room at 50+).</div></div>
       </div>
+      <div class="frow f3">
+        <div class="field"><label for="state">State<button class="info" data-term="stateTax">?</button></label>
+          <select id="state"></select>
+          <div class="hint">Adds approximate state income tax to the picture. Just your state — no ZIP needed.</div></div>
+        <div class="field" id="localWrap" style="display:none"><label for="localRate">Local income tax rate (%)</label>
+          <input id="localRate" type="number" step="0.1" min="0" inputmode="decimal">
+          <div class="hint">Your state has local income taxes in some places (e.g. NYC ~3.9, Philadelphia ~3.75). Not sure? Check a pay stub, or leave 0.</div></div>
+      </div>
     </div>
 
     <div class="card">
@@ -148,7 +156,7 @@
     </div>
 
     <div class="card">
-      <h2>Employer match <button class="info" data-term="match">?</button></h2>
+      <h2>Employer money <button class="info" data-term="match">?</button></h2>
       <div class="frow f3">
         <div class="field"><label for="matchRate">Match rate (% of your contribution)</label><input id="matchRate" type="number" step="5" inputmode="decimal">
           <div class="hint">"50% match" means 50 cents per dollar you put in.</div></div>
@@ -156,6 +164,14 @@
           <div class="hint">"...on the first 6% of pay" means the cap is 6.</div></div>
         <div class="field"><label for="trueUp">Plan has annual true-up?<button class="info" data-term="trueUp">?</button></label>
           <select id="trueUp"><option value="no">No / not sure</option><option value="yes">Yes</option></select></div>
+      </div>
+      <div class="frow f3">
+        <div class="field"><label for="employerBasePct">Automatic contribution (% of salary)<button class="info" data-term="nonElective">?</button></label>
+          <input id="employerBasePct" type="number" step="0.5" min="0" inputmode="decimal">
+          <div class="hint">Money your employer deposits whether or not you contribute — e.g. 3. None? Leave 0.</div></div>
+        <div class="field"><label for="employerBasePeriod">Deposited in pay #</label>
+          <input id="employerBasePeriod" type="number" min="1" inputmode="numeric">
+          <div class="hint">Often early in the year — pick the closest pay period.</div></div>
       </div>
     </div>
 

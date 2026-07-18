@@ -30,6 +30,7 @@ const IRS_FALLBACK = {
   }
 };
 let IRS = IRS_FALLBACK;
+let STATES = { approx: true, states: {} };   // populated from state-taxes.json
 
 /* ============================================================
    PAY FREQUENCIES
@@ -60,11 +61,13 @@ function payDates(s) {
 const DEFAULT_STATE = {
   calculated: false,
   planYear: 2026, filing: "single", birthYear: 1990,
+  state: "", localRate: 0,
   frequency: "biweekly", firstPay: "2026-01-09",
   bonusPct: 0, bonusAmt: 0, bonusActual: 0, bonusPeriod: 6,
   salaryTiers: [{ start: 1, salary: 85000 }],
   rateTiers: [{ start: 1, pre: 6, roth: 0, after: 0 }],
   matchRate: 50, matchCap: 6, trueUp: "no",
+  employerBasePct: 0, employerBasePeriod: 3,
   balance: 25000, retireAge: 65, expReturn: 7, contribGrowth: 2,
   scenarios: [
     { name: "My current plan", pre: 6, roth: 0, after: 0 },
@@ -112,6 +115,35 @@ function marginalRate(taxable, brackets) {
   return r;
 }
 
+
+function stateData(s) { return (STATES.states || {})[s.state] || null; }
+function stateBrackets(sd, filing) {
+  if (filing === "mfj") {
+    if (sd.mfj) return sd.mfj;
+    if (sd.mfjDouble) return sd.brackets.map(([f, r]) => [f * 2, r]);
+  }
+  return sd.brackets;
+}
+/* preTax is the pre-tax 401(k) amount; states flagged taxes401k give it no deduction */
+function stateTaxCalc(s, comp, preTax) {
+  const sd = stateData(s);
+  if (!sd || sd.type === "none") return { tax: 0, local: 0, sd };
+  const ded = (sd.stdDeduction && sd.stdDeduction[s.filing]) || 0;
+  const base = Math.max(0, comp - (sd.taxes401k ? 0 : preTax) - ded);
+  let tax = 0;
+  if (sd.type === "flat") tax = base * sd.rate / 100;
+  else {
+    const br = stateBrackets(sd, s.filing);
+    for (let i = 0; i < br.length; i++) {
+      const [lo, r] = br[i];
+      const hi = i + 1 < br.length ? br[i + 1][0] : Infinity;
+      if (base > lo) tax += (Math.min(base, hi) - lo) * r / 100;
+    }
+  }
+  const local = (sd.localTaxes ? Math.max(0, +s.localRate || 0) : 0) / 100 * base;
+  return { tax, local, sd };
+}
+
 function compute(s) {
   const L = limitsFor(s.planYear);
   const N = (FREQ[s.frequency] || FREQ.biweekly).n;
@@ -126,7 +158,7 @@ function compute(s) {
   const dates = payDates(s);
 
   const rows = [];
-  let grossYTD = 0, defYTD = 0, matchTotal = 0, ssTotal = 0, medTotal = 0;
+  let grossYTD = 0, defYTD = 0, matchTotal = 0, neTotal = 0, ssTotal = 0, medTotal = 0;
   let preTotal = 0, rothTotal = 0, afterTotal = 0, cappedAt = null, ssStopsAt = null;
 
   for (let p = 1; p <= N; p++) {
@@ -144,14 +176,17 @@ function compute(s) {
     if (desired > allowed + 1e-9 && cappedAt === null) cappedAt = p;
     const afterD = after * g;
     const match = (s.matchRate / 100) * Math.min(preD + rothD, (s.matchCap / 100) * g);
+    const neP = Math.min(Math.max(1, +s.employerBasePeriod || 1), N);
+    const ne = (p === neP && +s.employerBasePct > 0)
+      ? (s.employerBasePct / 100) * tierAt(salaryTiers, p, "salary") : 0;
     const ss = L.ssRate * Math.max(0, Math.min(g, L.ssWageBase - grossYTD));
     const med = L.medicareRate * g + L.addlMedicareRate * Math.max(0, Math.min(g, grossYTD + g - L.addlMedicareThreshold));
     grossYTD += g;
     if (ssStopsAt === null && grossYTD >= L.ssWageBase) ssStopsAt = p;
     defYTD += preD + rothD;
     preTotal += preD; rothTotal += rothD; afterTotal += afterD;
-    matchTotal += match; ssTotal += ss; medTotal += med;
-    rows.push({ p, date: dates[p - 1], g, bon, pre, roth, preD, rothD, afterD, defYTD, room: lim - defYTD, match, ss, med });
+    matchTotal += match; neTotal += ne; ssTotal += ss; medTotal += med;
+    rows.push({ p, date: dates[p - 1], g, bon, pre, roth, preD, rothD, afterD, defYTD, room: lim - defYTD, match, ne, ss, med });
   }
 
   if (s.trueUp === "yes") {
@@ -162,14 +197,18 @@ function compute(s) {
   const tax = fedTax(taxable, brackets);
   const taxable0 = Math.max(0, grossYTD - stdDed);
   const tax0 = fedTax(taxable0, brackets);
-  const effRate = taxable > 0 ? tax / taxable : 0;
+  const st = stateTaxCalc(s, grossYTD, preTotal);
+  const st0 = stateTaxCalc(s, grossYTD, 0);
+  const stateTax = st.tax, localTax = st.local;
+  const stateSaved = (st0.tax + st0.local) - (st.tax + st.local);
+  const effRate = taxable > 0 ? (tax + stateTax + localTax) / taxable : 0;
   for (const r of rows) {
     r.takeHome = r.g - r.preD - r.rothD - r.afterD - r.ss - r.med - (r.g - r.preD) * effRate;
   }
 
   const proj = [];
   let bal = +s.balance || 0;
-  const c0 = defYTD + afterTotal + matchTotal;
+  const c0 = defYTD + afterTotal + matchTotal + neTotal;
   let totalContrib = 0;
   const a0 = age(s);
   for (let i = 0; i <= Math.max(1, 72 - a0); i++) {
@@ -185,10 +224,11 @@ function compute(s) {
 
   return {
     L, N, lim, rows, bonus, grossYTD, preTotal, rothTotal, afterTotal, defTotal: defYTD,
-    matchTotal, ssTotal, medTotal, cappedAt, ssStopsAt, bonusTarget, bonusIsActual: +s.bonusActual > 0,
+    matchTotal, neTotal, ssTotal, medTotal, cappedAt, ssStopsAt, bonusTarget, bonusIsActual: +s.bonusActual > 0,
     taxable, tax, tax0, taxSaved: tax0 - tax, effRate,
+    stateTax, localTax, stateSaved, stateInfo: st.sd,
     marginal: marginalRate(taxable, brackets), stdDed,
-    additions: defYTD + afterTotal + matchTotal,
+    additions: defYTD + afterTotal + matchTotal + neTotal,
     maxRate: lim / grossYTD, proj, atRet, totalContrib,
     maxMatch: (s.matchRate / 100) * (s.matchCap / 100) * grossYTD
   };
@@ -210,10 +250,15 @@ function computeScenario(s, R, sc) {
   const tax = fedTax(taxable, L.brackets[s.filing]);
   const fica = L.ssRate * Math.min(comp, L.ssWageBase) + L.medicareRate * comp
              + L.addlMedicareRate * Math.max(0, comp - L.addlMedicareThreshold);
-  const takeHome = comp - actual - afterD - tax - fica;
+  const stc = stateTaxCalc(s, comp, preD);
+  const stc0 = stateTaxCalc(s, comp, 0);
+  const stTax = stc.tax + stc.local;
+  const stSaved = (stc0.tax + stc0.local) - stTax;
+  const takeHome = comp - actual - afterD - tax - stTax - fica;
+  const additions = actual + afterD + match + R.neTotal;
   return { ...sc, desired, actual, capped, periods, afterD, match, matchLost,
-           additions: actual + afterD + match, over415: actual + afterD + match > L.totalAdditions415c,
-           taxSaved: R.tax0 - tax, takeHome, perPay: takeHome / N };
+           additions, over415: additions > L.totalAdditions415c,
+           taxSaved: R.tax0 - tax, stTax, stSaved, takeHome, perPay: takeHome / N };
 }
 
 /* ============================================================
@@ -234,6 +279,8 @@ const GLOSSARY = {
   maxRate: { t: "The 'max exactly' rate", b: `This is the contribution rate that fills your IRS limit on the <strong>final paycheck</strong> of the year — the sweet spot.<br><br>Why not max faster? If your plan matches per-paycheck without a true-up, finishing early means later paychecks earn no match. Slow and steady literally pays more.` },
   compounding: { t: "Compounding — the eighth wonder", b: `Your money earns returns; those returns earn returns. At 7%/year, money <strong>doubles roughly every 10 years</strong> — so a dollar invested at 30 can be ~$10 at 65.<br><br>That's why starting early and capturing the match beat almost any clever strategy later.` },
   fourPct: { t: "The 4% rule", b: `A classic planning shortcut: in retirement you can withdraw about <strong>4% of your balance per year</strong> (adjusting for inflation) with a low historical chance of running out over 30 years.<br><br>Flip it around: want $60,000/year from savings? Aim for ~$1.5 million. It's a rough compass, not a guarantee.` },
+  nonElective: { t: "Automatic employer contributions", b: `Some employers put money into your retirement account <strong>whether or not you contribute anything</strong> — often called a <em>non-elective</em>, <em>core</em>, or <em>base</em> contribution. Example: "the company contributes 3% of salary each year."<br><br>It's separate from the match, doesn't count against <em>your</em> IRS deferral limit, but does count toward the overall 415(c) ceiling.<div class="ex">Check your plan documents or ask HR: "Do we get a non-elective or core contribution, and when is it deposited?" It's often early in the year, based on last year's salary.</div>` },
+  stateTax: { t: "State income taxes (approximate)", b: `Most states tax wages on top of federal tax — nine don't (AK, FL, NV, NH, SD, TN, TX, WA, WY). Some are flat (Illinois 4.95%), some progressive (California up to 12.3%).<br><br>Planwise applies your state's rates as an <strong>approximation</strong>: real state returns have deductions, credits, and exemptions we don't model.<br><br><strong>Two quirks worth knowing:</strong> Pennsylvania taxes your pre-tax 401(k) contributions (no state deduction — but generally doesn't tax withdrawals in retirement). New Jersey <em>does</em> exempt 401(k) deferrals, but not 403(b)/457/IRA contributions.<div class="ex">A few places also charge local income tax (NYC, Philadelphia, many Ohio cities, Maryland counties). If your state shows a local-rate field, check your last pay stub for the rate.</div>` },
   frequency: { t: "Pay frequency", b: `How often your paycheck arrives changes the math per check, not per year:<br><br><strong>Weekly</strong> — 52 checks · <strong>Every two weeks</strong> — 26 · <strong>1st &amp; 15th</strong> — 24 · <strong>Monthly</strong> — 12.<br><br>Not sure? Check your last two pay stubs' dates. "Every two weeks" (biweekly) is the most common in the US.` },
   bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br><strong>Target:</strong> enter it as a % of salary <em>or</em> a dollar amount — whichever you know (the dollar amount wins if you fill both).<br><br><strong>Actual:</strong> bonuses rarely land exactly on target. Once you know the real number, enter it — it overrides the target and the whole plan updates.<div class="ex">No bonus? Leave everything at 0.</div>` },
   filing: { t: "Filing status", b: `How you file federal taxes. It sets your tax brackets and standard deduction:<br><br><strong>Single</strong> — unmarried.<br><strong>Married filing jointly</strong> — you and a spouse file one return (wider brackets, bigger deduction).<br><br>Other statuses exist (head of household, separate) — pick the closer of these two for planning.` },
@@ -344,6 +391,27 @@ function buildInsights(s, R) {
       src: "Fidelity — 'Mega backdoor Roth' explainer; IRC §415(c)." });
   }
 
+  const sd = R.stateInfo;
+  if (sd && sd.type === "none") {
+    out.push({ kind: "good", t: `${sd.name} has no state income tax`,
+      p: `Every pre-tax dollar you defer still saves federal tax, and your take-home stretches further than in most states. One planning note: if you might retire in a state that does tax income, Roth dollars contributed now come out tax-free there too.`,
+      src: "State revenue departments — nine states levy no wage income tax." });
+  } else if (sd && sd.taxes401k) {
+    out.push({ kind: "warn", t: `${sd.name} taxes your 401(k) contributions anyway`,
+      p: `Pennsylvania gives no state deduction for pre-tax 401(k) contributions — your ${money(R.preTotal)} still gets taxed at ${sd.rate}% by the state now. The flip side most people miss: PA generally doesn't tax retirement-plan withdrawals after 59½, so you're not taxed twice. Your combined tax savings shown here counts federal only, which is accurate for PA.`,
+      src: "PA Department of Revenue — elective deferrals are taxable compensation; qualified retirement income is exempt." });
+  } else if (sd && R.stateSaved > 1) {
+    out.push({ kind: "good", t: `Pre-tax deferrals also cut your ${sd.name} tax by ~${money(R.stateSaved)}`,
+      p: `On top of ${money(R.taxSaved)} in federal savings, your state (approximately) taxes ${money(R.preTotal)} less of your income. Combined, deferring is discounted ~${pct((R.taxSaved + R.stateSaved) / Math.max(1, R.preTotal))} by the tax code.`,
+      src: "State bracket data (approximate) — verify with your state's revenue department." });
+  }
+
+  if (R.neTotal > 0) {
+    out.push({ kind: "good", t: `Your employer adds ${money(R.neTotal)} automatically`,
+      p: `On top of any match, your plan deposits a ${s.employerBasePct}% non-elective contribution — yours regardless of what you contribute. Combined with the match, that's ${money(R.neTotal + R.matchTotal)} of employer money this year, all counted in your projection.`,
+      src: "Plan non-elective/core contribution — verify timing and basis (current vs prior-year salary) in your plan documents." });
+  }
+
   if (R.bonusIsActual && Math.abs(R.bonus - R.bonusTarget) > 1 && R.bonusTarget > 0) {
     const diff = R.bonus - R.bonusTarget;
     out.push({ kind: "info", t: `Actual bonus came in ${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} target`,
@@ -436,12 +504,14 @@ function validate(s) {
   if (+s.bonusActual < 0) add("Actual bonus can't be negative — leave it 0 until you know the real number.", ["bonusActual"]);
   if (+s.matchRate < 0 || +s.matchRate > 200) add("Match rate looks off — 50 means 50 cents per dollar you contribute.", ["matchRate"]);
   if (+s.matchCap < 0 || +s.matchCap > 100) add("Match cap looks off — it's the % of your pay the match applies to (e.g. 6).", ["matchCap"]);
+  if (+s.employerBasePct < 0 || +s.employerBasePct > 25) add("Automatic employer contribution looks off — it's typically 0 to 10 (% of salary).", ["employerBasePct"]);
 
   if (!(+s.retireAge > age(s)))
     add(`Retirement age must be later than your current age (${age(s)}).`, ["retireAge"]);
   if (+s.balance < 0) add("Current balance can't be negative — use 0 if you're just starting.", ["balance"]);
   if (+s.expReturn < -20 || +s.expReturn > 30) add("Expected return looks off — most planners use 5 to 9 (percent per year).", ["expReturn"]);
   if (+s.contribGrowth < 0 || +s.contribGrowth > 30) add("Contribution growth looks off — 2 to 3 (percent) is typical.", ["contribGrowth"]);
+  if (+s.localRate < 0 || +s.localRate > 8) add("Local tax rate looks off — most local income taxes are 0.5 to 4 (percent). Check your pay stub.", ["localRate"]);
 
   return errs;
 }
@@ -512,10 +582,16 @@ function renderAll() {
   const room = R.lim - R.defTotal;
   $("stDeferralNote").innerHTML = room < 1 ? `<span class="pill good">Maxed out</span>` :
     `<span class="pill warn">${money(room)} of room unused</span>`;
-  $("stMatch").textContent = money(R.matchTotal);
+  $("stMatch").textContent = money(R.matchTotal + R.neTotal);
   const lost = Math.max(0, R.maxMatch - R.matchTotal);
-  $("stMatchNote").innerHTML = lost > 1 ? `<span class="pill bad">${money(lost)} match lost</span>` : `<span class="pill good">Full match captured</span>`;
-  $("stTaxSaved").textContent = money(R.taxSaved);
+  $("stMatchNote").innerHTML =
+    (R.neTotal > 0 ? `match ${money(R.matchTotal)} · automatic ${money(R.neTotal)}<br>` : "") +
+    (lost > 1 ? `<span class="pill bad">${money(lost)} match lost</span>` : `<span class="pill good">Full match captured</span>`);
+  $("stTaxSaved").textContent = money(R.taxSaved + R.stateSaved);
+  const tsNote = document.querySelector("#stTaxSaved + .note") || $("stTaxSaved").parentElement.querySelector(".note");
+  if (tsNote) tsNote.textContent = R.stateInfo
+    ? `federal ${money(R.taxSaved)} + state ${money(R.stateSaved)} (approx) vs $0 pre-tax`
+    : "vs. contributing $0 pre-tax · add your state in Inputs for full picture";
   $("stMaxRate").textContent = pct(R.maxRate);
   $("stBalance").textContent = money(R.atRet);
   $("stBalanceNote").textContent = `at age ${s.retireAge}, ${s.expReturn}% return`;
@@ -552,18 +628,18 @@ function renderHeroStrip() {
 }
 
 function renderPayTable(R) {
-  const h = ["Pay #","Date","Gross","Pre-tax","Roth","After-tax","Deferral YTD","Room left","Match","SS tax","Medicare","Take-home"];
+  const h = ["Pay #","Date","Gross","Pre-tax","Roth","After-tax","Deferral YTD","Room left","Employer $","SS tax","Medicare","Take-home"];
   let html = "<thead><tr>" + h.map(x => `<th>${x}</th>`).join("") + "</tr></thead><tbody>";
   for (const r of R.rows) {
     html += `<tr${R.cappedAt === r.p ? ' class="capped"' : ""}><td>${r.p}${r.bon ? " ●" : ""}</td>
       <td>${r.date.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</td>
       <td>${money2(r.g)}</td><td>${money2(r.preD)}</td><td>${money2(r.rothD)}</td><td>${money2(r.afterD)}</td>
-      <td>${money(r.defYTD)}</td><td>${money(Math.max(0,r.room))}</td><td>${money2(r.match)}</td>
+      <td>${money(r.defYTD)}</td><td>${money(Math.max(0,r.room))}</td><td>${money2(r.match + r.ne)}</td>
       <td>${money2(r.ss)}</td><td>${money2(r.med)}</td><td>${money2(r.takeHome)}</td></tr>`;
   }
   html += `</tbody><tfoot><tr><td colspan="2">Totals</td><td>${money(R.grossYTD)}</td><td>${money(R.preTotal)}</td>
     <td>${money(R.rothTotal)}</td><td>${money(R.afterTotal)}</td><td>${money(R.defTotal)}</td><td>—</td>
-    <td>${money(R.matchTotal)}</td><td>${money(R.ssTotal)}</td><td>${money(R.medTotal)}</td><td>—</td></tr></tfoot>`;
+    <td>${money(R.matchTotal + R.neTotal)}</td><td>${money(R.ssTotal)}</td><td>${money(R.medTotal)}</td><td>—</td></tr></tfoot>`;
   $("payTable").innerHTML = html;
 }
 
@@ -589,6 +665,7 @@ function renderScenarios() {
         <div><dt>After-tax in</dt><dd>${money(c.afterD)}</dd></div>
         <div><dt>Total additions</dt><dd>${money(c.additions)}${c.over415 ? ' <span class="pill bad">over 415(c)</span>' : ""}</dd></div>
         <div><dt>Federal tax saved</dt><dd class="good">${money(c.taxSaved)}</dd></div>
+        <div><dt>State + local tax</dt><dd>${money(c.stTax)}${c.stSaved > 1 ? ' <span class="pill good">saves ' + money(c.stSaved) + "</span>" : ""}</dd></div>
         <div><dt>Take-home / paycheck</dt><dd>${money2(c.perPay)}</dd></div>
       </dl>`;
     row.appendChild(div);
@@ -650,7 +727,14 @@ function renderIRS(R) {
     ["Total additions — 415(c)", money(L.totalAdditions415c)],
     ["Social Security wage base", money(L.ssWageBase)],
     ["Standard deduction (" + (state.filing === "single" ? "single" : "married") + ")", money(L.standardDeduction[state.filing])]
-  ].map(([k, v]) => `${k}: <strong>${v}</strong>`).join("<br>");
+  ].map(([k, v]) => `${k}: <strong>${v}</strong>`).join("<br>")
+    + (function () {
+        const sd = stateData(state);
+        if (!sd) return "<br>State income tax: <strong>not selected</strong>";
+        if (sd.type === "none") return `<br>State income tax (${sd.name}): <strong>none 🎉</strong>`;
+        const desc = sd.type === "flat" ? `flat ${sd.rate}%` : `progressive, top ${sd.brackets[sd.brackets.length-1][1]}%`;
+        return `<br>State income tax (${sd.name}): <strong>${desc}</strong> <em style="color:var(--faint)">(approx — verify)</em>`;
+      })();
   $("irsSource").textContent = "Loaded automatically from irs-limits.json. Values follow the IRS annual COLA notice and SSA wage-base announcement; the file is versioned so one yearly update reaches every user.";
 }
 
@@ -658,10 +742,16 @@ function renderIRS(R) {
    INPUT BINDING
    ============================================================ */
 function bindInputs() {
+  const stateSel = $("state");
+  stateSel.innerHTML = '<option value="">— Skip state tax —</option>' +
+    Object.entries(STATES.states || {}).sort((a, b) => a[1].name.localeCompare(b[1].name))
+      .map(([code, sd]) => `<option value="${code}">${sd.name}</option>`).join("");
   const simple = { planYear: "planYear", filing: "filing", birthYear: "birthYear",
+    state: "state", localRate: "localRate",
     frequency: "frequency", firstPay: "firstPay",
     bonusPct: "bonusPct", bonusAmt: "bonusAmt", bonusActual: "bonusActual", bonusPeriod: "bonusPeriod",
     matchRate: "matchRate", matchCap: "matchCap", trueUp: "trueUp",
+    employerBasePct: "employerBasePct", employerBasePeriod: "employerBasePeriod",
     balance: "balance", retireAge: "retireAge", expReturn: "expReturn", contribGrowth: "contribGrowth" };
   const yearSel = $("planYear");
   Object.keys(IRS.years).sort().forEach(y => {
@@ -673,13 +763,19 @@ function bindInputs() {
     el.addEventListener("change", () => {
       state[key] = el.type === "number" || id === "planYear" ? +el.value : el.value;
       if (id === "frequency") syncFrequencyUI();
+      if (id === "state") syncStateUI();
       afterEdit();
     });
   }
   syncFrequencyUI();
+  syncStateUI();
   drawTierTables();
   $("addSalary").onclick = () => { state.salaryTiers.push({ start: 1, salary: 0 }); drawTierTables(); };
   $("addRate").onclick = () => { state.rateTiers.push({ start: 1, pre: 0, roth: 0, after: 0 }); drawTierTables(); };
+}
+function syncStateUI() {
+  const sd = stateData(state);
+  $("localWrap").style.display = sd && sd.localTaxes ? "" : "none";
 }
 function syncFrequencyUI() {
   const fixed = state.frequency === "semimonthly" || state.frequency === "monthly";
@@ -733,6 +829,8 @@ function load() {
     if (v && !v.frequency) v.frequency = "biweekly";           // migrate v1 plans
     if (v && v.calculated === undefined) v.calculated = true;  // migrate v2 plans
     if (v && v.bonusAmt === undefined) { v.bonusAmt = 0; v.bonusActual = 0; }  // migrate v4 plans
+    if (v && v.employerBasePct === undefined) { v.employerBasePct = 0; v.employerBasePeriod = 3; }  // migrate v5 plans
+    if (v && v.state === undefined) { v.state = ""; v.localRate = 0; }  // migrate v6 plans
     return v;
   } catch { return null; }
 }
@@ -886,9 +984,11 @@ function makePDF() {
       ["Room remaining", money(Math.max(0, R.lim - R.defTotal))],
       ["After-tax contributions", money(R.afterTotal)],
       ["Employer match", money(R.matchTotal) + (R.maxMatch - R.matchTotal > 1 ? `  (${money(R.maxMatch - R.matchTotal)} lost to front-loading)` : "")],
+      ["Automatic employer contribution", R.neTotal > 0 ? money(R.neTotal) + ` (${s.employerBasePct}% of salary)` : "None"],
       ["Total annual additions (415(c) limit " + money(R.L.totalAdditions415c) + ")", money(R.additions)],
-      ["Federal marginal / effective rate", pct(R.marginal) + " / " + pct(R.effRate)],
-      ["Federal tax saved by pre-tax deferrals", money(R.taxSaved)],
+      ["Federal marginal rate", pct(R.marginal)],
+      ["State + local income tax (approx)", R.stateInfo ? money(R.stateTax + R.localTax) + " (" + R.stateInfo.name + ")" : "Not selected"],
+      ["Tax saved by pre-tax deferrals (fed + state)", money(R.taxSaved + R.stateSaved)],
       ["Rate that maxes the limit exactly", pct(R.maxRate)],
       ["Social Security tax stops", R.ssStopsAt ? "Pay #" + R.ssStopsAt + " of " + R.N : "Not reached"],
       ["Bonus in plan", R.bonus > 0 ? money(R.bonus) + (R.bonusIsActual ? " (actual)" : " (target)") : "None"],
@@ -972,6 +1072,10 @@ $("reportBtn").onclick = makePDF;
     const r = await fetch("irs-limits.json", { cache: "no-store" });
     if (r.ok) IRS = await r.json();
   } catch { /* offline — fallback stays */ }
+  try {
+    const r2 = await fetch("state-taxes.json", { cache: "no-store" });
+    if (r2.ok) STATES = await r2.json();
+  } catch { /* offline — state tax simply reads $0 with a note */ }
   $("guestBanner").hidden = false;
   bindInputs();
   setupAuth();

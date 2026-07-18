@@ -8,6 +8,20 @@ A mobile-first web app that plans all 26 biweekly paychecks: auto-caps at the IR
 
 
 
+
+
+## v7 changes
+
+- **State income tax (approximate)** — a state dropdown (no ZIP code, by design: state determines ~95% of income-tax variance and asks less of the user's privacy). All 50 states + DC live in `state-taxes.json` (flat/progressive/none, MFJ tables or doubled thresholds, standard deductions where notable), fetched fresh like the IRS file and clearly marked APPROXIMATE — verify against your state's revenue department and update annually.
+- **Local income tax** — states with notable local taxes (NY, PA, OH, MD, IN, KY, MI, MO, AL, DE, OR) reveal an optional local-rate field with pay-stub guidance, instead of a locality database.
+- **Wired everywhere**: state+local tax in take-home (pay schedule and scenarios, with a per-scenario "State + local tax" row), combined federal+state savings on the dashboard and PDF, state summary on the IRS-figures card.
+- **State-aware coaching**: the Pennsylvania 401(k) quirk (no state deduction for pre-tax contributions, but withdrawals generally untaxed later), a "no state income tax" note for the nine no-tax states, and combined-savings math elsewhere. Correction from earlier docs: New Jersey *does* exempt 401(k) deferrals — its trap applies to 403(b)/457/IRA contributions.
+- Deploy note: add `state-taxes.json` to the repo alongside the other files.
+
+## v6 changes
+
+- **Automatic (non-elective) employer contribution** — for plans that deposit a fixed % of salary regardless of employee contributions (e.g. "the company adds 3%"). Configure the % and which pay period it lands in. It flows through everywhere it should: the pay schedule ("Employer $" column now shows match + automatic), the 415(c) additions check, scenario comparisons, the retirement projection, a dashboard breakdown (match vs automatic), a coaching insight, and the PDF. It correctly does *not* affect taxable income or the employee 402(g) limit, and it's based on the salary in effect at the deposit pay period.
+
 ## v5 changes
 
 - **Fixed the jumbled Overview** — a CSS class collision: the "?" glossary buttons use class `.info` (an 18px circle), and coaching insights of severity *info* also received class `info`, collapsing whole insight cards into 18px circles with overlapping overflow text. Insight severity classes are now namespaced (`kind-info` / `kind-good` / `kind-warn`).

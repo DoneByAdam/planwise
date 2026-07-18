@@ -1,0 +1,787 @@
+{
+ "_comment": "APPROXIMATE state income tax data for planning only. Brackets/rates change yearly and states have deductions, credits, and exemptions not modeled here. Verify with your state revenue department and update annually. rate/bracket rates are percents; brackets are [floor, rate]. mfjDouble: married-filing-jointly thresholds are double the single ones. taxes401k: state gives NO deduction for pre-tax 401(k) contributions (Pennsylvania). localTaxes: notable local income taxes exist; the app asks for the user's local rate.",
+ "updated": "2026-07-18",
+ "approx": true,
+ "states": {
+  "AK": {
+   "type": "none",
+   "name": "Alaska"
+  },
+  "FL": {
+   "type": "none",
+   "name": "Florida"
+  },
+  "NV": {
+   "type": "none",
+   "name": "Nevada"
+  },
+  "NH": {
+   "type": "none",
+   "name": "New Hampshire"
+  },
+  "SD": {
+   "type": "none",
+   "name": "South Dakota"
+  },
+  "TN": {
+   "type": "none",
+   "name": "Tennessee"
+  },
+  "TX": {
+   "type": "none",
+   "name": "Texas"
+  },
+  "WA": {
+   "type": "none",
+   "name": "Washington"
+  },
+  "WY": {
+   "type": "none",
+   "name": "Wyoming"
+  },
+  "AZ": {
+   "type": "flat",
+   "rate": 2.5,
+   "name": "Arizona"
+  },
+  "CO": {
+   "type": "flat",
+   "rate": 4.4,
+   "name": "Colorado"
+  },
+  "GA": {
+   "type": "flat",
+   "rate": 5.19,
+   "name": "Georgia"
+  },
+  "ID": {
+   "type": "flat",
+   "rate": 5.695,
+   "name": "Idaho"
+  },
+  "IL": {
+   "type": "flat",
+   "rate": 4.95,
+   "name": "Illinois"
+  },
+  "IN": {
+   "type": "flat",
+   "rate": 3.0,
+   "localTaxes": true,
+   "name": "Indiana"
+  },
+  "IA": {
+   "type": "flat",
+   "rate": 3.8,
+   "name": "Iowa"
+  },
+  "KY": {
+   "type": "flat",
+   "rate": 4.0,
+   "localTaxes": true,
+   "name": "Kentucky"
+  },
+  "MI": {
+   "type": "flat",
+   "rate": 4.25,
+   "localTaxes": true,
+   "name": "Michigan"
+  },
+  "MS": {
+   "type": "flat",
+   "rate": 4.4,
+   "name": "Mississippi"
+  },
+  "NC": {
+   "type": "flat",
+   "rate": 4.25,
+   "name": "North Carolina"
+  },
+  "ND": {
+   "type": "flat",
+   "rate": 1.95,
+   "name": "North Dakota"
+  },
+  "PA": {
+   "type": "flat",
+   "rate": 3.07,
+   "localTaxes": true,
+   "taxes401k": true,
+   "name": "Pennsylvania"
+  },
+  "UT": {
+   "type": "flat",
+   "rate": 4.5,
+   "name": "Utah"
+  },
+  "MA": {
+   "type": "flat",
+   "rate": 5.0,
+   "name": "Massachusetts"
+  },
+  "LA": {
+   "type": "flat",
+   "rate": 3.0,
+   "name": "Louisiana"
+  },
+  "AR": {
+   "type": "flat",
+   "rate": 3.9,
+   "name": "Arkansas"
+  },
+  "OK": {
+   "type": "flat",
+   "rate": 4.75,
+   "name": "Oklahoma"
+  },
+  "MO": {
+   "type": "flat",
+   "rate": 4.7,
+   "localTaxes": true,
+   "name": "Missouri"
+  },
+  "AL": {
+   "type": "flat",
+   "rate": 5.0,
+   "localTaxes": true,
+   "name": "Alabama"
+  },
+  "KS": {
+   "type": "flat",
+   "rate": 5.58,
+   "name": "Kansas"
+  },
+  "CA": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     1
+    ],
+    [
+     10756,
+     2
+    ],
+    [
+     25499,
+     4
+    ],
+    [
+     40245,
+     6
+    ],
+    [
+     55866,
+     8
+    ],
+    [
+     70606,
+     9.3
+    ],
+    [
+     360659,
+     10.3
+    ],
+    [
+     432787,
+     11.3
+    ],
+    [
+     721314,
+     12.3
+    ]
+   ],
+   "mfjDouble": true,
+   "stdDeduction": {
+    "single": 5540,
+    "mfj": 11080
+   },
+   "name": "California"
+  },
+  "NY": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     4
+    ],
+    [
+     8500,
+     4.5
+    ],
+    [
+     11700,
+     5.25
+    ],
+    [
+     13900,
+     5.5
+    ],
+    [
+     80650,
+     6
+    ],
+    [
+     215400,
+     6.85
+    ],
+    [
+     1077550,
+     9.65
+    ]
+   ],
+   "stdDeduction": {
+    "single": 8000,
+    "mfj": 16050
+   },
+   "localTaxes": true,
+   "name": "New York"
+  },
+  "NJ": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     1.4
+    ],
+    [
+     20000,
+     1.75
+    ],
+    [
+     35000,
+     3.5
+    ],
+    [
+     40000,
+     5.525
+    ],
+    [
+     75000,
+     6.37
+    ],
+    [
+     500000,
+     8.97
+    ],
+    [
+     1000000,
+     10.75
+    ]
+   ],
+   "mfj": [
+    [
+     0,
+     1.4
+    ],
+    [
+     20000,
+     1.75
+    ],
+    [
+     50000,
+     2.45
+    ],
+    [
+     70000,
+     3.5
+    ],
+    [
+     80000,
+     5.525
+    ],
+    [
+     150000,
+     6.37
+    ],
+    [
+     500000,
+     8.97
+    ],
+    [
+     1000000,
+     10.75
+    ]
+   ],
+   "name": "New Jersey"
+  },
+  "CT": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     2
+    ],
+    [
+     10000,
+     4.5
+    ],
+    [
+     50000,
+     5.5
+    ],
+    [
+     100000,
+     6
+    ],
+    [
+     200000,
+     6.5
+    ],
+    [
+     250000,
+     6.9
+    ],
+    [
+     500000,
+     6.99
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Connecticut"
+  },
+  "MN": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     5.35
+    ],
+    [
+     31690,
+     6.8
+    ],
+    [
+     104090,
+     7.85
+    ],
+    [
+     183340,
+     9.85
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Minnesota"
+  },
+  "OR": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     4.75
+    ],
+    [
+     4300,
+     6.75
+    ],
+    [
+     10750,
+     8.75
+    ],
+    [
+     125000,
+     9.9
+    ]
+   ],
+   "stdDeduction": {
+    "single": 2745,
+    "mfj": 5495
+   },
+   "localTaxes": true,
+   "name": "Oregon"
+  },
+  "HI": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     1.4
+    ],
+    [
+     9600,
+     3.2
+    ],
+    [
+     14400,
+     5.5
+    ],
+    [
+     19200,
+     6.4
+    ],
+    [
+     24000,
+     6.8
+    ],
+    [
+     36000,
+     7.2
+    ],
+    [
+     48000,
+     7.6
+    ],
+    [
+     125000,
+     8.25
+    ],
+    [
+     175000,
+     9
+    ],
+    [
+     225000,
+     10
+    ],
+    [
+     275000,
+     11
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Hawaii"
+  },
+  "WI": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     3.5
+    ],
+    [
+     14320,
+     4.4
+    ],
+    [
+     28640,
+     5.3
+    ],
+    [
+     315310,
+     7.65
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Wisconsin"
+  },
+  "VA": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     2
+    ],
+    [
+     3000,
+     3
+    ],
+    [
+     5000,
+     5
+    ],
+    [
+     17000,
+     5.75
+    ]
+   ],
+   "name": "Virginia"
+  },
+  "MD": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     2
+    ],
+    [
+     1000,
+     3
+    ],
+    [
+     2000,
+     4
+    ],
+    [
+     3000,
+     4.75
+    ],
+    [
+     100000,
+     5
+    ],
+    [
+     125000,
+     5.25
+    ],
+    [
+     150000,
+     5.5
+    ],
+    [
+     250000,
+     5.75
+    ]
+   ],
+   "localTaxes": true,
+   "name": "Maryland"
+  },
+  "SC": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     0
+    ],
+    [
+     3560,
+     3
+    ],
+    [
+     17830,
+     6.2
+    ]
+   ],
+   "name": "South Carolina"
+  },
+  "ME": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     5.8
+    ],
+    [
+     26050,
+     6.75
+    ],
+    [
+     61600,
+     7.15
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Maine"
+  },
+  "NE": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     2.46
+    ],
+    [
+     3700,
+     3.51
+    ],
+    [
+     22170,
+     5.01
+    ],
+    [
+     35730,
+     5.2
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Nebraska"
+  },
+  "MT": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     4.7
+    ],
+    [
+     20500,
+     5.9
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Montana"
+  },
+  "NM": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     1.7
+    ],
+    [
+     5500,
+     3.2
+    ],
+    [
+     11000,
+     4.7
+    ],
+    [
+     16000,
+     4.9
+    ],
+    [
+     210000,
+     5.9
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "New Mexico"
+  },
+  "WV": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     2.22
+    ],
+    [
+     10000,
+     2.96
+    ],
+    [
+     25000,
+     3.33
+    ],
+    [
+     40000,
+     4.44
+    ],
+    [
+     60000,
+     4.82
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "West Virginia"
+  },
+  "VT": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     3.35
+    ],
+    [
+     45400,
+     6.6
+    ],
+    [
+     110050,
+     7.6
+    ],
+    [
+     229550,
+     8.75
+    ]
+   ],
+   "mfjDouble": true,
+   "name": "Vermont"
+  },
+  "RI": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     3.75
+    ],
+    [
+     73450,
+     4.75
+    ],
+    [
+     166950,
+     5.99
+    ]
+   ],
+   "name": "Rhode Island"
+  },
+  "DE": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     0
+    ],
+    [
+     2000,
+     2.2
+    ],
+    [
+     5000,
+     3.9
+    ],
+    [
+     10000,
+     4.8
+    ],
+    [
+     20000,
+     5.2
+    ],
+    [
+     25000,
+     5.55
+    ],
+    [
+     60000,
+     6.6
+    ]
+   ],
+   "localTaxes": true,
+   "name": "Delaware"
+  },
+  "DC": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     4
+    ],
+    [
+     10000,
+     6
+    ],
+    [
+     40000,
+     6.5
+    ],
+    [
+     60000,
+     8.5
+    ],
+    [
+     250000,
+     9.25
+    ],
+    [
+     500000,
+     9.75
+    ],
+    [
+     1000000,
+     10.75
+    ]
+   ],
+   "name": "Washington, DC"
+  },
+  "OH": {
+   "type": "progressive",
+   "brackets": [
+    [
+     0,
+     0
+    ],
+    [
+     26050,
+     2.75
+    ],
+    [
+     100000,
+     3.5
+    ]
+   ],
+   "localTaxes": true,
+   "name": "Ohio"
+  }
+ }
+}

@@ -61,7 +61,7 @@ const DEFAULT_STATE = {
   calculated: false,
   planYear: 2026, filing: "single", birthYear: 1990,
   frequency: "biweekly", firstPay: "2026-01-09",
-  bonusPct: 0, bonusPeriod: 6,
+  bonusPct: 0, bonusAmt: 0, bonusActual: 0, bonusPeriod: 6,
   salaryTiers: [{ start: 1, salary: 85000 }],
   rateTiers: [{ start: 1, pre: 6, roth: 0, after: 0 }],
   matchRate: 50, matchCap: 6, trueUp: "no",
@@ -121,7 +121,8 @@ function compute(s) {
   const salaryTiers = [...s.salaryTiers].sort((a, b) => a.start - b.start);
   const rateTiers = [...s.rateTiers].sort((a, b) => a.start - b.start);
   const bonusP = Math.min(Math.max(1, +s.bonusPeriod || 1), N);
-  const bonus = (s.bonusPct / 100) * tierAt(salaryTiers, bonusP, "salary");
+  const bonusTarget = +s.bonusAmt > 0 ? +s.bonusAmt : (s.bonusPct / 100) * tierAt(salaryTiers, bonusP, "salary");
+  const bonus = +s.bonusActual > 0 ? +s.bonusActual : bonusTarget;
   const dates = payDates(s);
 
   const rows = [];
@@ -130,7 +131,7 @@ function compute(s) {
 
   for (let p = 1; p <= N; p++) {
     const base = tierAt(salaryTiers, p, "salary") / N;
-    const bon = (p === bonusP && s.bonusPct > 0) ? bonus : 0;
+    const bon = (p === bonusP && bonus > 0) ? bonus : 0;
     const g = base + bon;
     const pre = tierAt(rateTiers, p, "pre") / 100;
     const roth = tierAt(rateTiers, p, "roth") / 100;
@@ -184,7 +185,7 @@ function compute(s) {
 
   return {
     L, N, lim, rows, bonus, grossYTD, preTotal, rothTotal, afterTotal, defTotal: defYTD,
-    matchTotal, ssTotal, medTotal, cappedAt, ssStopsAt,
+    matchTotal, ssTotal, medTotal, cappedAt, ssStopsAt, bonusTarget, bonusIsActual: +s.bonusActual > 0,
     taxable, tax, tax0, taxSaved: tax0 - tax, effRate,
     marginal: marginalRate(taxable, brackets), stdDed,
     additions: defYTD + afterTotal + matchTotal,
@@ -234,7 +235,7 @@ const GLOSSARY = {
   compounding: { t: "Compounding — the eighth wonder", b: `Your money earns returns; those returns earn returns. At 7%/year, money <strong>doubles roughly every 10 years</strong> — so a dollar invested at 30 can be ~$10 at 65.<br><br>That's why starting early and capturing the match beat almost any clever strategy later.` },
   fourPct: { t: "The 4% rule", b: `A classic planning shortcut: in retirement you can withdraw about <strong>4% of your balance per year</strong> (adjusting for inflation) with a low historical chance of running out over 30 years.<br><br>Flip it around: want $60,000/year from savings? Aim for ~$1.5 million. It's a rough compass, not a guarantee.` },
   frequency: { t: "Pay frequency", b: `How often your paycheck arrives changes the math per check, not per year:<br><br><strong>Weekly</strong> — 52 checks · <strong>Every two weeks</strong> — 26 · <strong>1st &amp; 15th</strong> — 24 · <strong>Monthly</strong> — 12.<br><br>Not sure? Check your last two pay stubs' dates. "Every two weeks" (biweekly) is the most common in the US.` },
-  bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br>Enter your target bonus as a % of salary and which paycheck it lands in. No bonus? Leave it at 0.` },
+  bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br><strong>Target:</strong> enter it as a % of salary <em>or</em> a dollar amount — whichever you know (the dollar amount wins if you fill both).<br><br><strong>Actual:</strong> bonuses rarely land exactly on target. Once you know the real number, enter it — it overrides the target and the whole plan updates.<div class="ex">No bonus? Leave everything at 0.</div>` },
   filing: { t: "Filing status", b: `How you file federal taxes. It sets your tax brackets and standard deduction:<br><br><strong>Single</strong> — unmarried.<br><strong>Married filing jointly</strong> — you and a spouse file one return (wider brackets, bigger deduction).<br><br>Other statuses exist (head of household, separate) — pick the closer of these two for planning.` },
   salarySchedule: { t: "Salary schedule", b: `Your gross annual salary — before taxes and deductions. Expecting a raise mid-year? Add a row: <strong>"From pay #14, $92,000"</strong> means the new salary starts at paycheck 14. One row is fine for most people.` },
   expectedReturn: { t: "Expected annual return", b: `What your investments earn per year, on average. History for diversified stock-heavy portfolios: roughly <strong>7–10% before inflation</strong>; bonds lower. 7% is a common planning default.<br><br>Nobody knows the future — run it at 5% and 9% too and plan for the range.` }
@@ -343,6 +344,13 @@ function buildInsights(s, R) {
       src: "Fidelity — 'Mega backdoor Roth' explainer; IRC §415(c)." });
   }
 
+  if (R.bonusIsActual && Math.abs(R.bonus - R.bonusTarget) > 1 && R.bonusTarget > 0) {
+    const diff = R.bonus - R.bonusTarget;
+    out.push({ kind: "info", t: `Actual bonus came in ${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} target`,
+      p: `Your plan now uses the actual ${money(R.bonus)} bonus. ${diff > 0 ? "Nice — consider steering some of the extra into your contribution rate before year-end." : "The schedule, match, and tax figures have been updated to the real number."}`,
+      src: "Planwise — actual bonus overrides target." });
+  }
+
   if (R.ssStopsAt) {
     out.push({ kind: "good", t: `Paycheck raise incoming: Social Security tax stops at pay #${R.ssStopsAt}`,
       p: `Your income crosses the ${money(R.L.ssWageBase)} wage base, so the 6.2% SS tax drops off — roughly ${money2(R.rows[0].g * R.L.ssRate)} more per paycheck for the rest of the year. A painless moment to raise your contribution rate.`,
@@ -424,6 +432,8 @@ function validate(s) {
   });
 
   if (+s.bonusPct < 0 || +s.bonusPct > 200) add("Bonus % looks off — enter it as a percent of salary (e.g. 10).", ["bonusPct"]);
+  if (+s.bonusAmt < 0) add("Target bonus amount can't be negative.", ["bonusAmt"]);
+  if (+s.bonusActual < 0) add("Actual bonus can't be negative — leave it 0 until you know the real number.", ["bonusActual"]);
   if (+s.matchRate < 0 || +s.matchRate > 200) add("Match rate looks off — 50 means 50 cents per dollar you contribute.", ["matchRate"]);
   if (+s.matchCap < 0 || +s.matchCap > 100) add("Match cap looks off — it's the % of your pay the match applies to (e.g. 6).", ["matchCap"]);
 
@@ -517,7 +527,7 @@ function renderAll() {
        <span class="lt">${l.lt}</span><span class="ls">${l.ls}</span></button>`).join("");
 
   $("insights").innerHTML = buildInsights(s, R).map(i =>
-    `<div class="insight ${i.kind}"><div><div class="t">${i.t}</div><p>${i.p}</p><div class="src">Source: ${i.src}</div></div></div>`).join("");
+    `<div class="insight kind-${i.kind}"><div><div class="t">${i.t}</div><p>${i.p}</p><div class="src">Source: ${i.src}</div></div></div>`).join("");
 
   $("paySub").textContent = `All ${R.N} pays (${FREQ[s.frequency].label}), auto-capped at your IRS limit. Amber rows show where the cap kicks in.`;
 
@@ -649,7 +659,8 @@ function renderIRS(R) {
    ============================================================ */
 function bindInputs() {
   const simple = { planYear: "planYear", filing: "filing", birthYear: "birthYear",
-    frequency: "frequency", firstPay: "firstPay", bonusPct: "bonusPct", bonusPeriod: "bonusPeriod",
+    frequency: "frequency", firstPay: "firstPay",
+    bonusPct: "bonusPct", bonusAmt: "bonusAmt", bonusActual: "bonusActual", bonusPeriod: "bonusPeriod",
     matchRate: "matchRate", matchCap: "matchCap", trueUp: "trueUp",
     balance: "balance", retireAge: "retireAge", expReturn: "expReturn", contribGrowth: "contribGrowth" };
   const yearSel = $("planYear");
@@ -721,6 +732,7 @@ function load() {
     const v = JSON.parse(raw);
     if (v && !v.frequency) v.frequency = "biweekly";           // migrate v1 plans
     if (v && v.calculated === undefined) v.calculated = true;  // migrate v2 plans
+    if (v && v.bonusAmt === undefined) { v.bonusAmt = 0; v.bonusActual = 0; }  // migrate v4 plans
     return v;
   } catch { return null; }
 }
@@ -879,6 +891,7 @@ function makePDF() {
       ["Federal tax saved by pre-tax deferrals", money(R.taxSaved)],
       ["Rate that maxes the limit exactly", pct(R.maxRate)],
       ["Social Security tax stops", R.ssStopsAt ? "Pay #" + R.ssStopsAt + " of " + R.N : "Not reached"],
+      ["Bonus in plan", R.bonus > 0 ? money(R.bonus) + (R.bonusIsActual ? " (actual)" : " (target)") : "None"],
       ["Projected balance at age " + s.retireAge, money(R.atRet)],
       ["Est. retirement income (4% rule)", money(R.atRet * 0.04)]
     ]
@@ -908,7 +921,8 @@ function makePDF() {
     footStyles: { fillColor: G }
   });
   doc.setFontSize(7).setTextColor(120);
-  doc.text("Estimates for planning only — not tax or investment advice. Verify IRS figures at irs.gov and plan rules in your Summary Plan Description.", 14, 290);
+  doc.text("DISCLAIMER: Planwise is for guidance and reference only. It is not tax, legal, or investment advice. Estimates use simplified", 14, 286);
+  doc.text("federal-only assumptions. Consult a tax professional or accountant before acting. Verify IRS figures at irs.gov.", 14, 291);
   doc.save(`Planwise_${s.planYear}_plan.pdf`);
   toast("Report downloaded");
 }

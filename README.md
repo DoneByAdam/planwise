@@ -7,6 +7,13 @@ A mobile-first web app that plans all 26 biweekly paychecks: auto-caps at the IR
 
 
 
+
+## v5 changes
+
+- **Fixed the jumbled Overview** — a CSS class collision: the "?" glossary buttons use class `.info` (an 18px circle), and coaching insights of severity *info* also received class `info`, collapsing whole insight cards into 18px circles with overlapping overflow text. Insight severity classes are now namespaced (`kind-info` / `kind-good` / `kind-warn`).
+- **Disclaimer everywhere** — a site-wide footer on every view, a note on the Home page, and a strengthened PDF footer: Planwise is for guidance and reference only, not tax/legal/investment advice; consult a tax professional or accountant.
+- **Flexible bonus** — target bonus as a % of salary *or* a dollar amount (dollar wins if both are set), plus an "Actual bonus received" field that overrides the target once the real number is known. A coaching insight calls out when actual lands above or below target, and the PDF notes whether the bonus figure is target or actual.
+
 ## v4 changes
 
 - Rebranded to **Planwise** with the official logo: transparent-background mark in the header, full logo on the home hero, and real PNG favicons (64/256 + Apple touch icon) extracted from the logo artwork.

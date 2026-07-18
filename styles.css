@@ -150,9 +150,9 @@ h2{font-family:var(--font-display);font-size:18px;letter-spacing:-.01em;margin-b
 
 /* ---------- insights ---------- */
 .insight{display:flex;gap:12px;padding:13px 14px;border-radius:var(--radius-sm);border:1px solid var(--line);margin-bottom:10px;background:var(--card-solid)}
-.insight.warn{border-left:4px solid var(--amber)}
-.insight.good{border-left:4px solid var(--mint)}
-.insight.info{border-left:4px solid var(--indigo)}
+.insight.kind-warn{border-left:4px solid var(--amber)}
+.insight.kind-good{border-left:4px solid var(--mint)}
+.insight.kind-info{border-left:4px solid var(--indigo)}
 .insight .t{font-weight:700;font-size:14px}
 .insight p{font-size:13.5px;color:var(--muted);margin-top:2px}
 .insight .src{font-size:11.5px;color:var(--faint);margin-top:5px;font-style:italic}
@@ -256,3 +256,7 @@ input.invalid,select.invalid{border-color:var(--red)!important;box-shadow:0 0 0 
 /* ---------- v4: Planwise branding ---------- */
 .brandmark{width:30px;height:auto;flex:none;filter:drop-shadow(0 0 8px rgba(61,220,151,.25))}
 .herologo{width:min(320px,70vw);height:auto;margin:0 auto 6px;display:block;filter:drop-shadow(0 6px 24px rgba(0,0,0,.4))}
+
+/* ---------- v5: site-wide disclaimer footer ---------- */
+.sitefooter{max-width:1080px;margin:10px auto 30px;padding:14px 16px;font-size:12px;color:var(--faint);line-height:1.65;border-top:1px solid var(--line)}
+.sitefooter strong{color:var(--muted)}

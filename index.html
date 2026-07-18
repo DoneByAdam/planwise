@@ -83,6 +83,7 @@
         <li><strong>Explore</strong> — your paycheck-by-paycheck schedule, side-by-side strategy comparisons, tax savings, and the compounding curve to retirement.</li>
       </ol>
       <button class="btn big" id="ctaStart2" style="margin-top:8px">Start my plan</button>
+      <p class="footer-note">Planwise is for guidance and reference only — not tax, legal, or investment advice. For decisions about your money, check with a tax professional or accountant.</p>
     </div>
   </section>
 
@@ -119,11 +120,16 @@
           </select></div>
         <div class="field" id="firstPayWrap"><label for="firstPay">First pay date of year</label><input id="firstPay" type="date">
           <div class="hint">Your first paycheck in January.</div></div>
-        <div class="field"><label for="bonusPct">Bonus (% of salary)<button class="info" data-term="bonus">?</button></label><input id="bonusPct" type="number" step="0.5" inputmode="decimal">
-          <div class="hint">No bonus? Leave it at 0.</div></div>
+        <div class="field"><label for="bonusPeriod">Bonus lands in pay #<button class="info" data-term="bonus">?</button></label><input id="bonusPeriod" type="number" min="1" inputmode="numeric">
+          <div class="hint">Which paycheck your bonus arrives with.</div></div>
       </div>
       <div class="frow f3">
-        <div class="field"><label for="bonusPeriod">Bonus lands in pay #</label><input id="bonusPeriod" type="number" min="1" inputmode="numeric"></div>
+        <div class="field"><label for="bonusPct">Target bonus (% of salary)</label><input id="bonusPct" type="number" step="0.5" inputmode="decimal">
+          <div class="hint">No bonus? Leave at 0.</div></div>
+        <div class="field"><label for="bonusAmt">…or target bonus ($)</label><input id="bonusAmt" type="number" min="0" inputmode="numeric">
+          <div class="hint">Use either — the dollar amount wins if both are filled.</div></div>
+        <div class="field"><label for="bonusActual">Actual bonus received ($)</label><input id="bonusActual" type="number" min="0" inputmode="numeric">
+          <div class="hint">Once you know the real number, enter it — it overrides the target.</div></div>
       </div>
       <label style="font-size:12.5px;font-weight:700;color:var(--muted);display:flex;align-items:center">Salary schedule<button class="info" data-term="salarySchedule">?</button></label>
       <table class="minitable" id="salaryTable">
@@ -288,6 +294,10 @@
     </div>
   </section>
 </main>
+
+<footer class="sitefooter">
+  <strong>Disclaimer:</strong> Planwise is a planning tool for guidance and reference only. It is <strong>not tax, legal, or investment advice</strong>, and its estimates use simplified federal-only assumptions that may not match your situation. Before making decisions about your retirement contributions or taxes, please check with a qualified tax professional or accountant. Figures should be verified against irs.gov and your plan's official documents.
+</footer>
 
 <!-- ============ GLOSSARY SHEET ============ -->
 <div class="modal" id="glossModal" role="dialog" aria-modal="true" aria-labelledby="glossTitle">

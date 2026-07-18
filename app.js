@@ -7,8 +7,8 @@
    CONFIG — paste your Supabase project values to enable accounts.
    Leave blank and the app runs in device-only mode.
    ============================================================ */
-const SUPABASE_URL = "";
-const SUPABASE_ANON_KEY = "";
+const SUPABASE_URL = "https://diedbpcowqnvvapfgutv.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpZWRicGNvd3FudnZhcGZndXR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MDIzMjQsImV4cCI6MjA5OTk3ODMyNH0.OpqjouG5K8ooLYlk0AbmbeLShnCV33439u86bciAslE";
 
 /* ============================================================
    IRS DATA — fetched from irs-limits.json, with embedded fallback

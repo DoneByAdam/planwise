@@ -1,4 +1,4 @@
--- MaxOut 401(k) Planner — Supabase schema
+-- Planwise Planner — Supabase schema
 -- Run this in Supabase: SQL Editor -> New query -> paste -> Run.
 -- Supabase already encrypts data at rest (AES-256) and in transit (TLS).
 -- Row Level Security below guarantees users can only ever read/write their own rows.

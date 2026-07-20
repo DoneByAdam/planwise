@@ -3,6 +3,8 @@
    Optional Supabase backend for accounts + sync (see README.md). */
 "use strict";
 
+const APP_VERSION = "9.3";
+
 /* ============================================================
    CONFIG — paste your Supabase project values to enable accounts.
    Leave blank and the app runs in device-only mode.
@@ -840,15 +842,15 @@ function loadStore() {
   try {
     plans = JSON.parse(localStorage.getItem("planwise.plans")) || [];
   } catch { plans = []; }
-  // migrate the old single-plan keys (v1..v7)
+  // migrate the pre-v8 single-plan store
   if (!plans.length) {
-    let raw = localStorage.getItem("planwise.plan") || localStorage.getItem("maxout.plan");
+    let raw = localStorage.getItem("planwise.plan");   // migrate the pre-v8 single-plan key
     if (raw) {
       try {
         const data = migrateData(JSON.parse(raw));
         plans = [{ id: newId(), name: (data.planYear || "My") + " plan", created: Date.now(), updated: Date.now(), data }];
       } catch { /* ignore corrupt */ }
-      localStorage.removeItem("planwise.plan"); localStorage.removeItem("maxout.plan");
+      localStorage.removeItem("planwise.plan");
     }
   }
   plans.forEach(p => p.data = migrateData(p.data));
@@ -974,7 +976,7 @@ function openPlan(id, opts = {}) {
   refreshInputFields();
   renderPlanChip();
   renderAllSafe();
-  if (!opts.silent) { $("plansModal").classList.remove("open"); toast(`Opened "${p.name}"`); goto(state.calculated ? "dashboard" : "inputs"); }
+  if (!opts.silent) { toast(`Opened "${p.name}"`); goto(state.calculated ? "dashboard" : "inputs"); }
 }
 function renderPlansList() {
   const box = $("plansList");
@@ -986,12 +988,14 @@ function renderPlansList() {
       </div>
       <div class="pacts">
         <button data-open="${p.id}" class="chip-btn dark">Open</button>
+        <button data-pdf="${p.id}" class="chip-btn dark">PDF</button>
         <button data-rename="${p.id}" class="chip-btn dark">Rename</button>
         <button data-dup="${p.id}" class="chip-btn dark">Duplicate</button>
         <button data-del="${p.id}" class="chip-btn dark danger">Delete</button>
       </div>
     </div>`).join("");
   box.querySelectorAll("[data-open]").forEach(b => b.onclick = () => openPlan(b.dataset.open));
+  box.querySelectorAll("[data-pdf]").forEach(b => b.onclick = () => makePDF(plans.find(x => x.id === b.dataset.pdf)));
   box.querySelectorAll("[data-rename]").forEach(b => b.onclick = () => {
     const p = plans.find(x => x.id === b.dataset.rename);
     const name = prompt("Plan name:", p.name);
@@ -1030,7 +1034,7 @@ function createPlan() {
    Primary: a Supabase "feedback" table (see schema.sql).
    Fallbacks when no backend: GitHub issues, then email.
    ============================================================ */
-const GITHUB_ISSUES_URL = "https://github.com/DoneByAdam/planwise/issues";
+const GITHUB_ISSUES_URL = "https://github.com/DoneByAdam/Planwise/issues";
 const CONTACT_EMAIL = "";   // optional mailto fallback, e.g. "you@example.com"
 async function sendFeedback() {
   if ($("fbHoney").value) { $("contactModal").classList.remove("open"); return; }  // bot honeypot
@@ -1042,7 +1046,7 @@ async function sendFeedback() {
       $("fbSend").disabled = true;
       const { error } = await supa.from("feedback").insert({
         category, message: message.slice(0, 4000), email: email.slice(0, 200) || null,
-        context: `plan year ${state.planYear} · ${state.frequency} · v7`
+        context: `plan year ${state.planYear} · ${state.frequency} · v${APP_VERSION}`
       });
       if (error) throw error;
       $("contactModal").classList.remove("open");
@@ -1127,10 +1131,11 @@ function refreshAuthUI() {
 /* ============================================================
    PDF REPORT
    ============================================================ */
-function makePDF() {
-  if (!state.calculated || !results) { toast("Calculate your plan first — then the report has something to say"); goto("inputs"); return; }
+function makePDF(planObj) {
+  const s = planObj ? migrateData(structuredClone(planObj.data)) : state;
+  if (!s.calculated || (!planObj && !results)) { toast("Calculate that plan first — then the report has something to say"); goto("inputs"); return; }
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("PDF library couldn't load — check your connection and refresh"); return; }
-  const R = results, s = state;
+  const R = planObj ? compute(s) : results;
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const G = [43, 184, 124], INK = [15, 23, 42];
@@ -1138,7 +1143,7 @@ function makePDF() {
   doc.setTextColor(255).setFont("helvetica", "bold").setFontSize(18);
   doc.text(`Planwise — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
   doc.setFontSize(9).setFont("helvetica", "normal");
-  const cp = currentPlan();
+  const cp = planObj || currentPlan();
   doc.text(`Plan: ${cp ? cp.name : "My plan"} · Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
   if (cp) { doc.setFontSize(8); doc.text(`Numbers last saved ${fmtDate(cp.updated)} · plan created ${fmtDate(cp.created)}`, 14, 26); }
 
@@ -1191,8 +1196,8 @@ function makePDF() {
   });
   doc.setFontSize(7).setTextColor(120);
   doc.text("DISCLAIMER: Planwise is for guidance and reference only. It is not tax, legal, or investment advice. Estimates use simplified", 14, 286);
-  doc.text("federal-only assumptions. Consult a tax professional or accountant before acting. Verify IRS figures at irs.gov.", 14, 291);
-  doc.save(`Planwise_${s.planYear}_plan.pdf`);
+  doc.text("federal and approximate state assumptions. Consult a tax professional or accountant before acting. Verify figures at irs.gov.", 14, 291);
+  doc.save(`Planwise_${(cp ? cp.name : s.planYear + " plan").replace(/[^\w\d-]+/g, "_").slice(0, 40)}.pdf`);
   toast("Report downloaded");
 }
 
@@ -1207,6 +1212,7 @@ function renderAllSafe() {
   }
 }
 function goto(view) {
+  if (view === "plans") renderPlansList();
   document.querySelectorAll(".nav button").forEach(x => x.classList.toggle("active", x.dataset.view === view));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
   window.scrollTo({ top: 0 });
@@ -1234,7 +1240,7 @@ document.addEventListener("click", e => {
   const btn = e.target.closest("[data-term]");
   if (btn) { e.preventDefault(); openGloss(btn.dataset.term); }
 });
-$("reportBtn").onclick = makePDF;
+$("reportBtn").onclick = () => makePDF();
 
 (async function boot() {
   try {
@@ -1260,10 +1266,12 @@ $("reportBtn").onclick = makePDF;
     goto("dashboard");
     toast("Sample plan loaded — explore, then make it yours in Inputs");
   };
-  $("plansBtn").onclick = () => { renderPlansList(); $("plansModal").classList.add("open"); };
+  $("plansBtn").onclick = () => goto("plans");
   $("newPlanBtn").onclick = createPlan;
-  $("contactBtn").onclick = () => $("contactModal").classList.add("open");
-  $("contactBtn2").onclick = () => $("contactModal").classList.add("open");
+  $("contactBtn").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
+  $("contactBtn2").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
+  $("contactBtn3").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
+  $("verStamp").textContent = "Planwise v" + APP_VERSION;
   $("fbSend").onclick = sendFeedback;
   renderPlanChip();
   if (state.calculated) renderAllSafe(); else { gate(); renderIRSFromState(); renderHeroStrip(); }

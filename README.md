@@ -10,6 +10,19 @@ A mobile-first web app that plans all 26 biweekly paychecks: auto-caps at the IR
 
 
 
+
+
+## v9 changes
+
+- **Fixed: "try-it mode" banner stayed visible after signing in.** The sign-in code was correctly setting the banner's `hidden` attribute, but the banner's own CSS (`display:flex`) overrode the browser's default `[hidden] {display:none}` rule, so it rendered anyway. Added a global `[hidden]{display:none!important}` kill-switch so the `hidden` attribute always wins, for this and any future element. Present since v2; v8 inherited it — v9 resolves it.
+
+## v8 changes
+
+- **Multiple named, dated plans** — a plan switcher in the header opens "Your plans": create, open, rename, duplicate, and delete plans, each stamped with created/last-saved timestamps (shown on the dashboard and in the PDF header). Use cases: what-if runs, one plan per job, and keeping past years as history. Works signed-out (device storage) and syncs per-plan when signed in; client-side encryption still applies per plan. Existing single plans migrate automatically into the new store.
+- **Multiple jobs note** — the plans modal and glossary remind users the 402(g) deferral limit is per person across all employers, not per job.
+- **Contact / feedback** — a contact form (footer link + Home) writing to a new Supabase `feedback` table: insert-only for visitors (signed in or not), unreadable through the public API — you read messages in the Supabase dashboard (Table Editor → feedback). Includes a spam honeypot, optional reply email, and graceful fallbacks (GitHub issues link, optional mailto) when the backend isn't configured.
+- **Database migration** — `schema.sql` is now fully re-runnable; running it again on an existing project drops the one-plan-per-user constraint and creates the feedback table. **Action needed: re-run schema.sql in the Supabase SQL editor.**
+
 ## v7 changes
 
 - **State income tax (approximate)** — a state dropdown (no ZIP code, by design: state determines ~95% of income-tax variance and asks less of the user's privacy). All 50 states + DC live in `state-taxes.json` (flat/progressive/none, MFJ tables or doubled thresholds, standard deductions where notable), fetched fresh like the IRS file and clearly marked APPROXIMATE — verify against your state's revenue department and update annually.

@@ -76,7 +76,9 @@ const DEFAULT_STATE = {
     { name: "Roth split", pre: 5, roth: 5, after: 0 }
   ]
 };
-let state = load() || structuredClone(DEFAULT_STATE);
+let plans = [];          // [{id, name, created, updated, data}]
+let currentPlanId = null;
+let state = loadStore();
 let results = null;
 let charts = {};
 let supa = null, session = null, encKeyPass = null;
@@ -280,6 +282,7 @@ const GLOSSARY = {
   compounding: { t: "Compounding — the eighth wonder", b: `Your money earns returns; those returns earn returns. At 7%/year, money <strong>doubles roughly every 10 years</strong> — so a dollar invested at 30 can be ~$10 at 65.<br><br>That's why starting early and capturing the match beat almost any clever strategy later.` },
   fourPct: { t: "The 4% rule", b: `A classic planning shortcut: in retirement you can withdraw about <strong>4% of your balance per year</strong> (adjusting for inflation) with a low historical chance of running out over 30 years.<br><br>Flip it around: want $60,000/year from savings? Aim for ~$1.5 million. It's a rough compass, not a guarantee.` },
   nonElective: { t: "Automatic employer contributions", b: `Some employers put money into your retirement account <strong>whether or not you contribute anything</strong> — often called a <em>non-elective</em>, <em>core</em>, or <em>base</em> contribution. Example: "the company contributes 3% of salary each year."<br><br>It's separate from the match, doesn't count against <em>your</em> IRS deferral limit, but does count toward the overall 415(c) ceiling.<div class="ex">Check your plan documents or ask HR: "Do we get a non-elective or core contribution, and when is it deposited?" It's often early in the year, based on last year's salary.</div>` },
+  multiPlan: { t: "Plans: what-ifs, jobs, and history", b: `Each plan is a complete snapshot — inputs plus a name and timestamps.<br><br><strong>What-if runs:</strong> duplicate your plan and change one thing ("2026 — aggressive Roth").<br><strong>Multiple jobs:</strong> make a plan per job — but remember the IRS deferral limit is <strong>per person, not per job</strong>. Two 401(k)s still share one ${"$"}24,500 limit; keep an eye on the combined total yourself.<br><strong>History:</strong> keep last year's plan around — over time your plans become a record of how your saving evolved.` },
   stateTax: { t: "State income taxes (approximate)", b: `Most states tax wages on top of federal tax — nine don't (AK, FL, NV, NH, SD, TN, TX, WA, WY). Some are flat (Illinois 4.95%), some progressive (California up to 12.3%).<br><br>Planwise applies your state's rates as an <strong>approximation</strong>: real state returns have deductions, credits, and exemptions we don't model.<br><br><strong>Two quirks worth knowing:</strong> Pennsylvania taxes your pre-tax 401(k) contributions (no state deduction — but generally doesn't tax withdrawals in retirement). New Jersey <em>does</em> exempt 401(k) deferrals, but not 403(b)/457/IRA contributions.<div class="ex">A few places also charge local income tax (NYC, Philadelphia, many Ohio cities, Maryland counties). If your state shows a local-rate field, check your last pay stub for the rate.</div>` },
   frequency: { t: "Pay frequency", b: `How often your paycheck arrives changes the math per check, not per year:<br><br><strong>Weekly</strong> — 52 checks · <strong>Every two weeks</strong> — 26 · <strong>1st &amp; 15th</strong> — 24 · <strong>Monthly</strong> — 12.<br><br>Not sure? Check your last two pay stubs' dates. "Every two weeks" (biweekly) is the most common in the US.` },
   bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br><strong>Target:</strong> enter it as a % of salary <em>or</em> a dollar amount — whichever you know (the dollar amount wins if you fill both).<br><br><strong>Actual:</strong> bonuses rarely land exactly on target. Once you know the real number, enter it — it overrides the target and the whole plan updates.<div class="ex">No bonus? Leave everything at 0.</div>` },
@@ -547,6 +550,7 @@ function renderAll() {
   const R = results, s = state;
 
   renderHeroStrip();
+  renderPlanChip();
   // pay strip
   const strip = $("paystrip"); strip.innerHTML = "";
   strip.classList.toggle("dense", R.N > 30);
@@ -816,28 +820,60 @@ function afterEdit() {
 }
 
 /* ============================================================
-   PERSISTENCE
+   MULTI-PLAN STORE
+   Local: planwise.plans (array) + planwise.currentPlan (id).
+   Cloud: one row per plan in Supabase, keyed by the same uuid.
    ============================================================ */
-function load() {
-  try {
-    let raw = localStorage.getItem("planwise.plan");
-    if (!raw) {                                   // migrate from the MaxOut beta key
-      raw = localStorage.getItem("maxout.plan");
-      if (raw) { localStorage.setItem("planwise.plan", raw); localStorage.removeItem("maxout.plan"); }
-    }
-    const v = JSON.parse(raw);
-    if (v && !v.frequency) v.frequency = "biweekly";           // migrate v1 plans
-    if (v && v.calculated === undefined) v.calculated = true;  // migrate v2 plans
-    if (v && v.bonusAmt === undefined) { v.bonusAmt = 0; v.bonusActual = 0; }  // migrate v4 plans
-    if (v && v.employerBasePct === undefined) { v.employerBasePct = 0; v.employerBasePeriod = 3; }  // migrate v5 plans
-    if (v && v.state === undefined) { v.state = ""; v.localRate = 0; }  // migrate v6 plans
-    return v;
-  } catch { return null; }
+function newId() { return (crypto.randomUUID ? crypto.randomUUID() : "p" + Date.now() + Math.random().toString(16).slice(2)); }
+
+function migrateData(v) {
+  if (!v) return v;
+  if (!v.frequency) v.frequency = "biweekly";
+  if (v.calculated === undefined) v.calculated = true;
+  if (v.bonusAmt === undefined) { v.bonusAmt = 0; v.bonusActual = 0; }
+  if (v.employerBasePct === undefined) { v.employerBasePct = 0; v.employerBasePeriod = 3; }
+  if (v.state === undefined) { v.state = ""; v.localRate = 0; }
+  return v;
 }
+
+function loadStore() {
+  try {
+    plans = JSON.parse(localStorage.getItem("planwise.plans")) || [];
+  } catch { plans = []; }
+  // migrate the old single-plan keys (v1..v7)
+  if (!plans.length) {
+    let raw = localStorage.getItem("planwise.plan") || localStorage.getItem("maxout.plan");
+    if (raw) {
+      try {
+        const data = migrateData(JSON.parse(raw));
+        plans = [{ id: newId(), name: (data.planYear || "My") + " plan", created: Date.now(), updated: Date.now(), data }];
+      } catch { /* ignore corrupt */ }
+      localStorage.removeItem("planwise.plan"); localStorage.removeItem("maxout.plan");
+    }
+  }
+  plans.forEach(p => p.data = migrateData(p.data));
+  currentPlanId = localStorage.getItem("planwise.currentPlan");
+  if (!plans.find(p => p.id === currentPlanId)) currentPlanId = plans[0]?.id || null;
+  if (!currentPlanId) {
+    const p = { id: newId(), name: new Date().getFullYear() + 1 + " plan", created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) };
+    plans = [p]; currentPlanId = p.id;
+  }
+  saveStore();
+  return structuredClone(plans.find(p => p.id === currentPlanId).data);
+}
+function saveStore() {
+  localStorage.setItem("planwise.plans", JSON.stringify(plans));
+  localStorage.setItem("planwise.currentPlan", currentPlanId);
+}
+function currentPlan() { return plans.find(p => p.id === currentPlanId); }
+
 let saveTimer = null;
 function persist() {
-  localStorage.setItem("planwise.plan", JSON.stringify(state));
-  if (session) { clearTimeout(saveTimer); saveTimer = setTimeout(cloudSave, 900); }
+  const p = currentPlan();
+  if (p) { p.data = structuredClone(state); p.updated = Date.now(); }
+  saveStore();
+  renderPlanChip();
+  if (session) { clearTimeout(saveTimer); saveTimer = setTimeout(() => cloudSavePlan(p), 900); }
 }
 
 /* ---------- client-side encryption (AES-256-GCM, PBKDF2 210k) ---------- */
@@ -863,30 +899,169 @@ async function decryptJSON(b64, pass) {
   return JSON.parse(dec.decode(pt));
 }
 
-async function cloudSave() {
-  if (!supa || !session) return;
+/* ---------- cloud sync: one row per plan ---------- */
+async function cloudSavePlan(p) {
+  if (!supa || !session || !p) return;
   try {
-    const row = { user_id: session.user.id, name: "My plan" };
-    if (encKeyPass) { row.is_encrypted = true; row.ciphertext = await encryptJSON(state, encKeyPass); row.data = null; }
-    else { row.is_encrypted = false; row.data = state; row.ciphertext = null; }
-    const { error } = await supa.from("plans").upsert(row, { onConflict: "user_id" });
+    const row = { id: p.id, user_id: session.user.id, name: p.name, updated_at: new Date(p.updated).toISOString() };
+    if (encKeyPass) { row.is_encrypted = true; row.ciphertext = await encryptJSON(p.data, encKeyPass); row.data = null; }
+    else { row.is_encrypted = false; row.data = p.data; row.ciphertext = null; }
+    const { error } = await supa.from("plans").upsert(row, { onConflict: "id" });
     if (error) throw error;
     $("syncDot").classList.add("on");
   } catch (e) { console.error(e); toast("Cloud save failed — data is still safe on this device"); }
 }
-async function cloudLoad() {
-  const { data, error } = await supa.from("plans").select("*").maybeSingle();
-  if (error || !data) return null;
-  if (data.is_encrypted) {
-    for (let tries = 0; tries < 3; tries++) {
-      const pass = prompt("Enter your encryption passphrase to unlock your plan:");
-      if (pass === null) return null;
-      try { const obj = await decryptJSON(data.ciphertext, pass); encKeyPass = pass; return obj; }
-      catch { alert("That passphrase didn't unlock the data. Try again."); }
+async function cloudSaveAll() { for (const p of plans) await cloudSavePlan(p); }
+async function cloudDelete(id) {
+  if (!supa || !session) return;
+  try { await supa.from("plans").delete().eq("id", id); } catch (e) { console.error(e); }
+}
+async function decryptRow(row) {
+  if (!row.is_encrypted) return row.data;
+  for (let tries = 0; tries < 3; tries++) {
+    if (!encKeyPass) {
+      encKeyPass = prompt("Enter your encryption passphrase to unlock your plans:");
+      if (encKeyPass === null) { encKeyPass = null; return null; }
     }
-    return null;
+    try { return await decryptJSON(row.ciphertext, encKeyPass); }
+    catch { alert("That passphrase didn't unlock the data. Try again."); encKeyPass = null; }
   }
-  return data.data;
+  return null;
+}
+async function cloudSyncDown() {
+  if (!supa || !session) return;
+  const { data, error } = await supa.from("plans").select("*");
+  if (error || !data) return;
+  for (const row of data) {
+    const local = plans.find(p => p.id === row.id);
+    const cloudUpdated = new Date(row.updated_at).getTime();
+    if (local && local.updated >= cloudUpdated) continue;   // local is newer
+    const d = migrateData(await decryptRow(row));
+    if (!d) continue;                                        // locked / skipped
+    if (local) { local.data = d; local.name = row.name; local.updated = cloudUpdated; }
+    else plans.push({ id: row.id, name: row.name, created: new Date(row.created_at || row.updated_at).getTime(), updated: cloudUpdated, data: d });
+  }
+  if (!plans.find(p => p.id === currentPlanId)) currentPlanId = plans[0]?.id || currentPlanId;
+  saveStore();
+  openPlan(currentPlanId, { silent: true });
+}
+
+/* ============================================================
+   PLAN MANAGER UI
+   ============================================================ */
+function fmtDate(ts) { return new Date(ts).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); }
+function renderPlanChip() {
+  const p = currentPlan();
+  if (!p) return;
+  $("planName").textContent = p.name.length > 22 ? p.name.slice(0, 21) + "…" : p.name;
+  const meta = $("planMeta");
+  if (meta) meta.textContent = `${p.name} · saved ${fmtDate(p.updated)} · created ${fmtDate(p.created)}`;
+}
+function refreshInputFields() {
+  document.querySelectorAll("#view-inputs input, #view-inputs select").forEach(el => {
+    if (el.id && state[el.id] !== undefined) el.value = state[el.id];
+  });
+  drawTierTables();
+  syncFrequencyUI();
+  syncStateUI();
+}
+function openPlan(id, opts = {}) {
+  const p = plans.find(x => x.id === id);
+  if (!p) return;
+  currentPlanId = id;
+  state = structuredClone(p.data);
+  saveStore();
+  refreshInputFields();
+  renderPlanChip();
+  renderAllSafe();
+  if (!opts.silent) { $("plansModal").classList.remove("open"); toast(`Opened "${p.name}"`); goto(state.calculated ? "dashboard" : "inputs"); }
+}
+function renderPlansList() {
+  const box = $("plansList");
+  box.innerHTML = plans.slice().sort((a, b) => b.updated - a.updated).map(p => `
+    <div class="planrow ${p.id === currentPlanId ? "current" : ""}">
+      <div class="pmain">
+        <div class="pname">${p.name}${p.id === currentPlanId ? ' <span class="pill good">open</span>' : ""}</div>
+        <div class="pdates">Saved ${fmtDate(p.updated)} · Created ${fmtDate(p.created)}</div>
+      </div>
+      <div class="pacts">
+        <button data-open="${p.id}" class="chip-btn dark">Open</button>
+        <button data-rename="${p.id}" class="chip-btn dark">Rename</button>
+        <button data-dup="${p.id}" class="chip-btn dark">Duplicate</button>
+        <button data-del="${p.id}" class="chip-btn dark danger">Delete</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll("[data-open]").forEach(b => b.onclick = () => openPlan(b.dataset.open));
+  box.querySelectorAll("[data-rename]").forEach(b => b.onclick = () => {
+    const p = plans.find(x => x.id === b.dataset.rename);
+    const name = prompt("Plan name:", p.name);
+    if (name && name.trim()) { p.name = name.trim().slice(0, 60); p.updated = Date.now(); saveStore(); renderPlanChip(); renderPlansList(); if (session) cloudSavePlan(p); }
+  });
+  box.querySelectorAll("[data-dup]").forEach(b => b.onclick = () => {
+    const p = plans.find(x => x.id === b.dataset.dup);
+    const copy = { id: newId(), name: (p.name + " (copy)").slice(0, 60), created: Date.now(), updated: Date.now(), data: structuredClone(p.data) };
+    plans.push(copy); saveStore(); renderPlansList(); if (session) cloudSavePlan(copy);
+    toast("Duplicated — great for what-if runs or a second job");
+  });
+  box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    const p = plans.find(x => x.id === b.dataset.del);
+    if (plans.length === 1) { toast("This is your only plan — create another before deleting it"); return; }
+    if (!confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    plans = plans.filter(x => x.id !== p.id);
+    cloudDelete(p.id);
+    if (currentPlanId === p.id) { currentPlanId = plans[0].id; openPlan(currentPlanId, { silent: true }); }
+    saveStore(); renderPlansList(); renderPlanChip();
+    toast("Plan deleted");
+  });
+}
+function createPlan() {
+  const name = prompt("Name your plan (e.g. \"2026 — main job\", \"2026 — aggressive Roth\"):",
+    (currentPlan()?.data.planYear || new Date().getFullYear()) + " plan");
+  if (name === null) return;
+  const p = { id: newId(), name: (name.trim() || "Untitled plan").slice(0, 60), created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) };
+  plans.push(p); saveStore();
+  if (session) cloudSavePlan(p);
+  openPlan(p.id);
+  goto("inputs");
+}
+
+/* ============================================================
+   CONTACT / FEEDBACK
+   Primary: a Supabase "feedback" table (see schema.sql).
+   Fallbacks when no backend: GitHub issues, then email.
+   ============================================================ */
+const GITHUB_ISSUES_URL = "https://github.com/DoneByAdam/planwise/issues";
+const CONTACT_EMAIL = "";   // optional mailto fallback, e.g. "you@example.com"
+async function sendFeedback() {
+  if ($("fbHoney").value) { $("contactModal").classList.remove("open"); return; }  // bot honeypot
+  const category = $("fbCategory").value, message = $("fbMessage").value.trim(), email = $("fbEmail").value.trim();
+  const note = $("fbNotice"); note.hidden = true;
+  if (message.length < 5) { note.hidden = false; note.textContent = "Tell me a little more — the message looks empty."; return; }
+  if (supa) {
+    try {
+      $("fbSend").disabled = true;
+      const { error } = await supa.from("feedback").insert({
+        category, message: message.slice(0, 4000), email: email.slice(0, 200) || null,
+        context: `plan year ${state.planYear} · ${state.frequency} · v7`
+      });
+      if (error) throw error;
+      $("contactModal").classList.remove("open");
+      $("fbMessage").value = "";
+      toast("Sent — thank you! " + (email ? "I'll reply to your email." : ""));
+      return;
+    } catch (e) {
+      console.error(e);
+      note.hidden = false; note.textContent = "Couldn't send just now. You can also open an issue on GitHub: " + GITHUB_ISSUES_URL;
+      return;
+    } finally { $("fbSend").disabled = false; }
+  }
+  // no backend configured
+  if (CONTACT_EMAIL) {
+    location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Planwise " + category)}&body=${encodeURIComponent(message)}`;
+  } else {
+    note.hidden = false;
+    note.innerHTML = `Feedback needs the Supabase backend (see README), or use GitHub: <a href="${GITHUB_ISSUES_URL}" target="_blank" rel="noopener">open an issue</a>.`;
+  }
 }
 
 /* ============================================================
@@ -896,7 +1071,7 @@ let authMode = "signin";
 function setupAuth() {
   if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    supa.auth.getSession().then(({ data }) => { session = data.session; refreshAuthUI(); if (session) syncDown(); });
+    supa.auth.getSession().then(({ data }) => { session = data.session; refreshAuthUI(); if (session) cloudSyncDown(); });
     supa.auth.onAuthStateChange((_e, s2) => { session = s2; refreshAuthUI(); });
   } else refreshAuthUI();
 
@@ -927,21 +1102,13 @@ function setupAuth() {
       if (error) throw error;
       encKeyPass = $("encPass").value || null;
       $("authModal").classList.remove("open");
-      if (authMode === "signup") { await cloudSave(); toast("Account created — your plan is saved to it"); }
-      else {
-        const cloud = await cloudLoad();
-        if (cloud) { state = cloud; localStorage.setItem("planwise.plan", JSON.stringify(state)); location.reload(); }
-        else { await cloudSave(); toast("Signed in — plan synced"); }
-      }
+      if (authMode === "signup") { await cloudSaveAll(); toast("Account created — all your plans are saved to it"); }
+      else { await cloudSyncDown(); await cloudSaveAll(); toast("Signed in — plans synced"); }
       refreshAuthUI();
     } catch (e) {
       notice.hidden = false; notice.textContent = e.message || "Sign-in failed. Check email and password.";
     } finally { $("authSubmit").disabled = false; }
   };
-}
-async function syncDown() {
-  const cloud = await cloudLoad();
-  if (cloud) { state = cloud; localStorage.setItem("planwise.plan", JSON.stringify(state)); renderAllSafe(); }
 }
 function openAuth(mode) { setAuthMode(mode); $("authModal").classList.add("open"); }
 function setAuthMode(m) {
@@ -971,7 +1138,9 @@ function makePDF() {
   doc.setTextColor(255).setFont("helvetica", "bold").setFontSize(18);
   doc.text(`Planwise — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
   doc.setFontSize(9).setFont("helvetica", "normal");
-  doc.text(`Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
+  const cp = currentPlan();
+  doc.text(`Plan: ${cp ? cp.name : "My plan"} · Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
+  if (cp) { doc.setFontSize(8); doc.text(`Numbers last saved ${fmtDate(cp.updated)} · plan created ${fmtDate(cp.created)}`, 14, 26); }
 
   doc.setTextColor(...INK).setFontSize(12).setFont("helvetica", "bold");
   doc.text("Plan summary", 14, 40);
@@ -1086,13 +1255,16 @@ $("reportBtn").onclick = makePDF;
     state = structuredClone(DEFAULT_STATE);
     state.calculated = true;
     persist();
-    document.querySelectorAll("#view-inputs input,#view-inputs select").forEach(el => {
-      if (el.id && state[el.id] !== undefined) el.value = state[el.id];
-    });
-    drawTierTables();
+    refreshInputFields();
     renderAllSafe();
     goto("dashboard");
     toast("Sample plan loaded — explore, then make it yours in Inputs");
   };
+  $("plansBtn").onclick = () => { renderPlansList(); $("plansModal").classList.add("open"); };
+  $("newPlanBtn").onclick = createPlan;
+  $("contactBtn").onclick = () => $("contactModal").classList.add("open");
+  $("contactBtn2").onclick = () => $("contactModal").classList.add("open");
+  $("fbSend").onclick = sendFeedback;
+  renderPlanChip();
   if (state.calculated) renderAllSafe(); else { gate(); renderIRSFromState(); renderHeroStrip(); }
 })();

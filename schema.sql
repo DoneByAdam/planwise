@@ -1,4 +1,4 @@
--- Planwise — Supabase schema (v8: multiple plans per user + feedback inbox)
+-- Planwize — Supabase schema (v8: multiple plans per user + feedback inbox)
 -- Safe to re-run: uses IF EXISTS / IF NOT EXISTS throughout.
 -- UPGRADING from the original schema? Just run this whole file again.
 

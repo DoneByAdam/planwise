@@ -1,9 +1,9 @@
-/* Planwise — Smart Retirement Planning · 401(k) Contribution Planner
+/* Planwize — Smart Retirement Planning · 401(k) Contribution Planner
    Static app: works fully offline/guest via localStorage.
    Optional Supabase backend for accounts + sync (see README.md). */
 "use strict";
 
-const APP_VERSION = "9.3";
+const APP_VERSION = "10.0";
 
 /* ============================================================
    CONFIG — paste your Supabase project values to enable accounts.
@@ -269,7 +269,7 @@ function computeScenario(s, R, sc) {
    GLOSSARY — beginner-friendly, opened from any "?" button
    ============================================================ */
 const GLOSSARY = {
-  whatIsThis: { t: "What is this tool?", b: `Planwise plans your <strong>401(k)</strong> — the retirement account you fund straight from your paycheck, usually with free matching money from your employer.<br><br>You tell it how you're paid and what % you contribute; it shows the IRS limits, taxes, and what it all compounds into by retirement.<div class="ex">Rule one of retirement saving: <strong>never leave employer match on the table.</strong> It's an instant 25–100% return.</div>` },
+  whatIsThis: { t: "What is this tool?", b: `Planwize plans your <strong>401(k)</strong> — the retirement account you fund straight from your paycheck, usually with free matching money from your employer.<br><br>You tell it how you're paid and what % you contribute; it shows the IRS limits, taxes, and what it all compounds into by retirement.<div class="ex">Rule one of retirement saving: <strong>never leave employer match on the table.</strong> It's an instant 25–100% return.</div>` },
   payStrip: { t: "Reading this chart", b: `Each bar is one paycheck of the year, in order. The <strong style="color:var(--mint)">green fill</strong> shows how much of that check goes into your 401(k).<br><br>An <strong style="color:var(--amber)">amber bar</strong> means you hit the annual IRS limit mid-paycheck — contributions stop there. A <strong style="color:var(--red)">red edge</strong> marks the paycheck where Social Security tax stops for the year (see "Why paychecks grow late in the year").` },
   limit402g: { t: "The IRS limit — 402(g)", b: `Each year the IRS caps how much <strong>you</strong> can put into a 401(k) from your salary (pre-tax + Roth combined). For 2026 it's <strong>$24,500</strong>, and it usually rises a little every year.<br><br>Age 50+? You get extra "catch-up" room. Employer match does <strong>not</strong> count against this limit — it has its own, much higher ceiling (the 415(c) limit).` },
   deferral: { t: "Deferral", b: `"Deferral" is just the formal word for <strong>the money you send from your paycheck into your 401(k)</strong>. You're deferring pay until retirement.<br><br>It comes in two flavors — pre-tax and Roth — and the IRS annual limit applies to the two combined.` },
@@ -285,7 +285,7 @@ const GLOSSARY = {
   fourPct: { t: "The 4% rule", b: `A classic planning shortcut: in retirement you can withdraw about <strong>4% of your balance per year</strong> (adjusting for inflation) with a low historical chance of running out over 30 years.<br><br>Flip it around: want $60,000/year from savings? Aim for ~$1.5 million. It's a rough compass, not a guarantee.` },
   nonElective: { t: "Automatic employer contributions", b: `Some employers put money into your retirement account <strong>whether or not you contribute anything</strong> — often called a <em>non-elective</em>, <em>core</em>, or <em>base</em> contribution. Example: "the company contributes 3% of salary each year."<br><br>It's separate from the match, doesn't count against <em>your</em> IRS deferral limit, but does count toward the overall 415(c) ceiling.<div class="ex">Check your plan documents or ask HR: "Do we get a non-elective or core contribution, and when is it deposited?" It's often early in the year, based on last year's salary.</div>` },
   multiPlan: { t: "Plans: what-ifs, jobs, and history", b: `Each plan is a complete snapshot — inputs plus a name and timestamps.<br><br><strong>What-if runs:</strong> duplicate your plan and change one thing ("2026 — aggressive Roth").<br><strong>Multiple jobs:</strong> make a plan per job — but remember the IRS deferral limit is <strong>per person, not per job</strong>. Two 401(k)s still share one ${"$"}24,500 limit; keep an eye on the combined total yourself.<br><strong>History:</strong> keep last year's plan around — over time your plans become a record of how your saving evolved.` },
-  stateTax: { t: "State income taxes (approximate)", b: `Most states tax wages on top of federal tax — nine don't (AK, FL, NV, NH, SD, TN, TX, WA, WY). Some are flat (Illinois 4.95%), some progressive (California up to 12.3%).<br><br>Planwise applies your state's rates as an <strong>approximation</strong>: real state returns have deductions, credits, and exemptions we don't model.<br><br><strong>Two quirks worth knowing:</strong> Pennsylvania taxes your pre-tax 401(k) contributions (no state deduction — but generally doesn't tax withdrawals in retirement). New Jersey <em>does</em> exempt 401(k) deferrals, but not 403(b)/457/IRA contributions.<div class="ex">A few places also charge local income tax (NYC, Philadelphia, many Ohio cities, Maryland counties). If your state shows a local-rate field, check your last pay stub for the rate.</div>` },
+  stateTax: { t: "State income taxes (approximate)", b: `Most states tax wages on top of federal tax — nine don't (AK, FL, NV, NH, SD, TN, TX, WA, WY). Some are flat (Illinois 4.95%), some progressive (California up to 12.3%).<br><br>Planwize applies your state's rates as an <strong>approximation</strong>: real state returns have deductions, credits, and exemptions we don't model.<br><br><strong>Two quirks worth knowing:</strong> Pennsylvania taxes your pre-tax 401(k) contributions (no state deduction — but generally doesn't tax withdrawals in retirement). New Jersey <em>does</em> exempt 401(k) deferrals, but not 403(b)/457/IRA contributions.<div class="ex">A few places also charge local income tax (NYC, Philadelphia, many Ohio cities, Maryland counties). If your state shows a local-rate field, check your last pay stub for the rate.</div>` },
   frequency: { t: "Pay frequency", b: `How often your paycheck arrives changes the math per check, not per year:<br><br><strong>Weekly</strong> — 52 checks · <strong>Every two weeks</strong> — 26 · <strong>1st &amp; 15th</strong> — 24 · <strong>Monthly</strong> — 12.<br><br>Not sure? Check your last two pay stubs' dates. "Every two weeks" (biweekly) is the most common in the US.` },
   bonus: { t: "Bonuses and your 401(k)", b: `Most plans apply your contribution % to bonuses too — a 10% bonus with a 6% rate sends 6% of it into your 401(k) automatically.<br><br><strong>Target:</strong> enter it as a % of salary <em>or</em> a dollar amount — whichever you know (the dollar amount wins if you fill both).<br><br><strong>Actual:</strong> bonuses rarely land exactly on target. Once you know the real number, enter it — it overrides the target and the whole plan updates.<div class="ex">No bonus? Leave everything at 0.</div>` },
   filing: { t: "Filing status", b: `How you file federal taxes. It sets your tax brackets and standard deduction:<br><br><strong>Single</strong> — unmarried.<br><strong>Married filing jointly</strong> — you and a spouse file one return (wider brackets, bigger deduction).<br><br>Other statuses exist (head of household, separate) — pick the closer of these two for planning.` },
@@ -421,7 +421,7 @@ function buildInsights(s, R) {
     const diff = R.bonus - R.bonusTarget;
     out.push({ kind: "info", t: `Actual bonus came in ${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} target`,
       p: `Your plan now uses the actual ${money(R.bonus)} bonus. ${diff > 0 ? "Nice — consider steering some of the extra into your contribution rate before year-end." : "The schedule, match, and tax figures have been updated to the real number."}`,
-      src: "Planwise — actual bonus overrides target." });
+      src: "Planwize — actual bonus overrides target." });
   }
 
   if (R.ssStopsAt) {
@@ -823,7 +823,7 @@ function afterEdit() {
 
 /* ============================================================
    MULTI-PLAN STORE
-   Local: planwise.plans (array) + planwise.currentPlan (id).
+   Local: planwize.plans (array) + planwize.currentPlan (id).
    Cloud: one row per plan in Supabase, keyed by the same uuid.
    ============================================================ */
 function newId() { return (crypto.randomUUID ? crypto.randomUUID() : "p" + Date.now() + Math.random().toString(16).slice(2)); }
@@ -1034,7 +1034,7 @@ function createPlan() {
    Primary: a Supabase "feedback" table (see schema.sql).
    Fallbacks when no backend: GitHub issues, then email.
    ============================================================ */
-const GITHUB_ISSUES_URL = "https://github.com/DoneByAdam/Planwise/issues";
+const GITHUB_ISSUES_URL = "https://github.com/DoneByAdam/Planwize/issues";
 const CONTACT_EMAIL = "";   // optional mailto fallback, e.g. "you@example.com"
 async function sendFeedback() {
   if ($("fbHoney").value) { $("contactModal").classList.remove("open"); return; }  // bot honeypot
@@ -1061,7 +1061,7 @@ async function sendFeedback() {
   }
   // no backend configured
   if (CONTACT_EMAIL) {
-    location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Planwise " + category)}&body=${encodeURIComponent(message)}`;
+    location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Planwize " + category)}&body=${encodeURIComponent(message)}`;
   } else {
     note.hidden = false;
     note.innerHTML = `Feedback needs the Supabase backend (see README), or use GitHub: <a href="${GITHUB_ISSUES_URL}" target="_blank" rel="noopener">open an issue</a>.`;
@@ -1141,7 +1141,7 @@ function makePDF(planObj) {
   const G = [43, 184, 124], INK = [15, 23, 42];
   doc.setFillColor(...INK); doc.rect(0, 0, 210, 30, "F");
   doc.setTextColor(255).setFont("helvetica", "bold").setFontSize(18);
-  doc.text(`Planwise — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
+  doc.text(`Planwize — ${s.planYear} 401(k) Contribution Plan`, 14, 13);
   doc.setFontSize(9).setFont("helvetica", "normal");
   const cp = planObj || currentPlan();
   doc.text(`Plan: ${cp ? cp.name : "My plan"} · Generated ${new Date().toLocaleDateString()} · Paid ${FREQ[s.frequency].label} (${R.N} checks) · Filing: ${s.filing === "single" ? "Single" : "Married filing jointly"} · Age ${age(s)}`, 14, 21);
@@ -1195,9 +1195,9 @@ function makePDF(planObj) {
     footStyles: { fillColor: G }
   });
   doc.setFontSize(7).setTextColor(120);
-  doc.text("DISCLAIMER: Planwise is for guidance and reference only. It is not tax, legal, or investment advice. Estimates use simplified", 14, 286);
+  doc.text("DISCLAIMER: Planwize is for guidance and reference only. It is not tax, legal, or investment advice. Estimates use simplified", 14, 286);
   doc.text("federal and approximate state assumptions. Consult a tax professional or accountant before acting. Verify figures at irs.gov.", 14, 291);
-  doc.save(`Planwise_${(cp ? cp.name : s.planYear + " plan").replace(/[^\w\d-]+/g, "_").slice(0, 40)}.pdf`);
+  doc.save(`Planwize_${(cp ? cp.name : s.planYear + " plan").replace(/[^\w\d-]+/g, "_").slice(0, 40)}.pdf`);
   toast("Report downloaded");
 }
 
@@ -1271,7 +1271,25 @@ $("reportBtn").onclick = () => makePDF();
   $("contactBtn").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
   $("contactBtn2").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
   $("contactBtn3").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
-  $("verStamp").textContent = "Planwise v" + APP_VERSION;
+  $("verStamp").textContent = "Planwize v" + APP_VERSION;
+  const expBtn = $("exportBtn"), delBtn = $("deleteAllBtn");
+  if (expBtn) expBtn.onclick = () => {
+    const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), plans }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = "planwize-export.json"; link.click();
+    URL.revokeObjectURL(url);
+    toast("Downloaded — every plan, in plain JSON");
+  };
+  if (delBtn) delBtn.onclick = async () => {
+    if (!confirm(`Delete all ${plans.length} plan(s)? This can't be undone.`)) return;
+    for (const p of plans) await cloudDelete(p.id);
+    plans = [{ id: newId(), name: new Date().getFullYear() + " plan", created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) }];
+    currentPlanId = plans[0].id;
+    saveStore();
+    openPlan(currentPlanId, { silent: true });
+    toast("All plans deleted — starting fresh");
+    goto("home");
+  };
   $("fbSend").onclick = sendFeedback;
   renderPlanChip();
   if (state.calculated) renderAllSafe(); else { gate(); renderIRSFromState(); renderHeroStrip(); }

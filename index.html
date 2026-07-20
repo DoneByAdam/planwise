@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Planwise — Smart Retirement Planning</title>
-<meta name="description" content="Planwise turns your salary and pay schedule into a full-year 401(k) plan — IRS limits, employer match, taxes, and growth. Free and private.">
+<title>Planwize — Smart Retirement Planning</title>
+<meta name="description" content="Planwize turns your salary and pay schedule into a full-year 401(k) plan — IRS limits, employer match, taxes, and growth. Free and private.">
 <meta name="theme-color" content="#080d19">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
 <link rel="icon" type="image/png" sizes="256x256" href="favicon-256.png">
@@ -19,7 +19,7 @@
 <header class="topbar">
   <span class="brand">
     <img src="logo-mark.png" alt="" width="30" height="26" class="brandmark">
-    Planwise <span class="yr" id="brandYear">2026</span>
+    Planwize <span class="yr" id="brandYear">2026</span>
   </span>
   </span>
   <span class="spacer"></span>
@@ -47,9 +47,12 @@
   <!-- ============ HOME ============ -->
   <section class="view active" id="view-home">
     <div class="hero">
-      <img src="logo-full.png" alt="Planwise — smart retirement planning" class="herologo">
+      <div class="herobrand">
+        <img src="logo-mark.png" alt="" class="heromark">
+        <div class="herowordmark">PLANWIZE<span>Smart retirement planning</span></div>
+      </div>
       <h1>Know what every paycheck<br>does for your <span class="hl">retirement</span></h1>
-      <p class="sub" style="margin:14px auto 22px">Planwise turns your salary, pay schedule, and 401(k) rates into a full-year plan — IRS limits, employer match, taxes, and long-term growth, all handled. Built for beginners and spreadsheet veterans alike.</p>
+      <p class="sub" style="margin:14px auto 22px">Planwize turns your salary, pay schedule, and 401(k) rates into a full-year plan — IRS limits, employer match, taxes, and long-term growth, all handled. Built for beginners and spreadsheet veterans alike.</p>
       <div class="herocta">
         <button class="btn big" id="ctaStart">Start my plan — free</button>
         <button class="btn ghost big" id="ctaSample">See a sample plan</button>
@@ -60,7 +63,7 @@
 
     <div class="grid cols-3">
       <div class="feature"><div class="fi"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div>
-        <div class="ft">Hit the limit exactly</div><p>The IRS caps what you can contribute each year. Planwise finds the rate that fills your limit on the final paycheck — not a dollar wasted, not a month early.</p></div>
+        <div class="ft">Hit the limit exactly</div><p>The IRS caps what you can contribute each year. Planwize finds the rate that fills your limit on the final paycheck — not a dollar wasted, not a month early.</p></div>
       <div class="feature"><div class="fi"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2v20M5 9l7-7 7 7"/></svg></div>
         <div class="ft">Keep every match dollar</div><p>Employer match is free money — and surprisingly easy to forfeit. See exactly how much you're capturing, and what front-loading would cost you.</p></div>
       <div class="feature"><div class="fi"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M4 20h16M6 16l4-6 4 3 4-8"/></svg></div>
@@ -75,17 +78,67 @@
         <li><strong>Optional passphrase = zero-knowledge.</strong> Add one and your data is encrypted on your device before it's stored — not even the server can decrypt it.</li>
         <li><strong>Never shared. Never sold. No ads.</strong> Delete your data anytime.</li>
       </ul>
+      <button class="btn ghost" data-goto="about" style="margin-top:6px">Read the full security &amp; privacy details</button>
     </div>
 
     <div class="card">
       <h2>How it works</h2>
       <ol class="steps">
         <li><strong>Enter your pay info</strong> — salary, how often you're paid, your 401(k) rates. Takes about two minutes; every field has a plain-English explainer.</li>
-        <li><strong>Hit Calculate</strong> — Planwise checks your inputs and tells you if anything's missing.</li>
+        <li><strong>Hit Calculate</strong> — Planwize checks your inputs and tells you if anything's missing.</li>
         <li><strong>Explore</strong> — your paycheck-by-paycheck schedule, side-by-side strategy comparisons, tax savings, and the compounding curve to retirement.</li>
       </ol>
       <button class="btn big" id="ctaStart2" style="margin-top:8px">Start my plan</button>
-      <p class="footer-note">Planwise is for guidance and reference only — not tax, legal, or investment advice. For decisions about your money, check with a tax professional or accountant. Questions or ideas? <a href="#" id="contactBtn">Get in touch</a>.</p>
+      <p class="footer-note">Planwize is for guidance and reference only — not tax, legal, or investment advice. For decisions about your money, check with a tax professional or accountant. Questions or ideas? <a href="#" id="contactBtn">Get in touch</a>.</p>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT / SECURITY ============ -->
+  <section class="view" id="view-about">
+    <h1>About &amp; security</h1>
+    <p class="sub">What Planwize is, who's behind it, and exactly how your data is handled.</p>
+
+    <div class="card">
+      <h2>What makes Planwize different</h2>
+      <ul class="privlist">
+        <li><strong>Paycheck-level precision.</strong> Most calculators give you a yearly number. Planwize models every single paycheck — weekly, biweekly, semimonthly, or monthly — so it catches things others miss, like exactly which pay period hits your IRS limit and how much employer match that costs you.</li>
+        <li><strong>Federal + state, not just federal.</strong> Approximate state income tax for all 50 states + DC, including quirks like Pennsylvania taxing pre-tax 401(k) contributions.</li>
+        <li><strong>Named, dated plan history.</strong> Run what-ifs, model a second job, or keep last year's numbers as a permanent record — not a single form that overwrites itself.</li>
+        <li><strong>Explains itself.</strong> An 18-term glossary and a coaching corner turn "the tool told me a number" into "I understand why."</li>
+        <li><strong>Zero-knowledge option.</strong> Add a passphrase and even Planwize's own database can't read your numbers. Most free tools don't offer this.</li>
+        <li><strong>No ads, no data resale, ever.</strong> If a paid tier exists, that's the entire business model — not your data.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Security architecture</h2>
+      <div class="secgrid">
+        <div class="secrow"><div class="seci">🔒</div><div><strong>In transit</strong><p>Every connection uses TLS/HTTPS — from your browser to Planwize's servers, always encrypted.</p></div></div>
+        <div class="secrow"><div class="seci">🗄️</div><div><strong>At rest</strong><p>Saved plans live in a database encrypted at rest (AES-256), access-controlled so a plan can only ever be read or written by the account that owns it — enforced by the database itself, not just application code.</p></div></div>
+        <div class="secrow"><div class="seci">🔑</div><div><strong>Optional zero-knowledge encryption</strong><p>Set a passphrase and your plan is encrypted in your browser (AES-256-GCM, PBKDF2, 210,000 iterations) before it ever leaves your device. The server stores only ciphertext it cannot decrypt. Trade-off: lose the passphrase and the data is unrecoverable — by design, nobody holds a spare key.</p></div></div>
+        <div class="secrow"><div class="seci">🧪</div><div><strong>Try before you trust</strong><p>The entire tool works with no account at all — your numbers stay on your device until you decide otherwise.</p></div></div>
+        <div class="secrow"><div class="seci">🚫</div><div><strong>No ad trackers</strong><p>No ad networks, no third-party trackers riding along with your financial data.</p></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Your data, your control</h2>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:12px">Export everything you've entered, anytime, in plain JSON — or remove it.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn ghost" id="exportBtn">Export all my data (JSON)</button>
+        <button class="btn ghost" id="deleteAllBtn" style="border-color:var(--red);color:var(--red)">Delete all my plans</button>
+      </div>
+      <p class="footer-note" id="deleteNote">Deleting removes your plans from this device and, if signed in, from the cloud. To fully close an account (remove the login itself), use Contact — that step currently needs a person, not a button.</p>
+    </div>
+
+    <div class="card">
+      <h2>Who's behind this</h2>
+      <p style="color:var(--muted);font-size:14px">Planwize is an independent project, not a bank, brokerage, or registered investment advisor. It's a planning and education tool: it does arithmetic on the numbers you provide and explains published rules of thumb. It does not manage money, place trades, or give personalized investment or tax advice.</p>
+    </div>
+
+    <div class="card">
+      <h2>Disclaimer</h2>
+      <p style="color:var(--muted);font-size:14px">Planwize is for guidance and reference only — not tax, legal, or investment advice. Figures are estimates based on simplified federal and approximate state assumptions and published IRS/SSA data, which may not reflect your full situation. Always confirm with a qualified tax professional, financial advisor, or your plan's official documents before making decisions.</p>
     </div>
   </section>
 
@@ -325,8 +378,8 @@
 </main>
 
 <footer class="sitefooter">
-  <strong>Disclaimer:</strong> Planwise is a planning tool for guidance and reference only. It is <strong>not tax, legal, or investment advice</strong>, and its estimates use simplified assumptions (federal tax plus approximate state tax) that may not match your situation. Before making decisions about your retirement contributions or taxes, please check with a qualified tax professional or accountant. Figures should be verified against irs.gov and your plan's official documents.
- <span id="verStamp" style="white-space:nowrap;font-family:var(--font-mono)"></span> · <a href="#" id="contactBtn2" style="white-space:nowrap">Contact / feedback</a>
+  <strong>Disclaimer:</strong> Planwize is a planning tool for guidance and reference only. It is <strong>not tax, legal, or investment advice</strong>, and its estimates use simplified assumptions (federal tax plus approximate state tax) that may not match your situation. Before making decisions about your retirement contributions or taxes, please check with a qualified tax professional or accountant. Figures should be verified against irs.gov and your plan's official documents.
+ <a href="#" data-goto="about">About &amp; security</a> · <span id="verStamp" style="white-space:nowrap;font-family:var(--font-mono)"></span> · <a href="#" id="contactBtn2" style="white-space:nowrap">Contact / feedback</a>
 </footer>
 
 <!-- ============ CONTACT MODAL ============ -->
@@ -334,7 +387,7 @@
   <div class="box">
     <button class="close" data-close aria-label="Close">×</button>
     <h2 id="contactTitle">Questions, ideas, bugs?</h2>
-    <p class="sub" style="margin-bottom:12px">Goes straight to the person who builds Planwise. Include your email if you'd like a reply.</p>
+    <p class="sub" style="margin-bottom:12px">Goes straight to the person who builds Planwize. Include your email if you'd like a reply.</p>
     <div class="field"><label for="fbCategory">Topic</label>
       <select id="fbCategory"><option>Question</option><option>Suggestion</option><option>Bug / issue</option><option>Other</option></select></div>
     <div class="field"><label for="fbMessage">Message</label>

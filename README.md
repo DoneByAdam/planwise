@@ -1,4 +1,4 @@
-# Planwise — Smart Retirement Planning
+# Planwize — Smart Retirement Planning
 
 A mobile-first web app that turns a salary and pay schedule into a full-year 401(k) plan: paycheck-by-paycheck contributions auto-capped at the IRS limit, employer match and automatic contributions (including match lost to front-loading), federal plus approximate state/local tax, side-by-side strategy simulations, compounding projections, PDF reports, and named/dated plans for what-ifs, multiple jobs, and year-over-year history.
 
@@ -6,7 +6,7 @@ Live stack: static frontend (GitHub Pages) + Supabase (auth, Postgres with Row L
 
 ## Verifying what's deployed
 
-The footer of every page shows the running version (e.g. "Planwise v9.3"). If the live site doesn't match the version you pushed: check that GitHub Pages serves the branch you pushed to (Settings → Pages), that you're visiting the current URL (renaming the repo changes the Pages address), and hard-refresh / clear site data to defeat mobile caching.
+The footer of every page shows the running version (e.g. "Planwize v9.3"). If the live site doesn't match the version you pushed: check that GitHub Pages serves the branch you pushed to (Settings → Pages), that you're visiting the current URL (renaming the repo changes the Pages address), and hard-refresh / clear site data to defeat mobile caching.
 
 ## Files
 
@@ -18,7 +18,7 @@ The footer of every page shows the running version (e.g. "Planwise v9.3"). If th
 | `irs-limits.json` | Annual IRS/SSA figures — update each November |
 | `state-taxes.json` | Approximate state income tax data (50 states + DC) — verify and update annually |
 | `schema.sql` | Supabase schema: plans (multi-plan, RLS) + feedback (insert-only). Safe to re-run. |
-| `logo-*.png`, `favicon*.png`, `apple-touch-icon.png` | Planwise brand assets |
+| `logo-*.png`, `favicon*.png`, `apple-touch-icon.png` | Planwize brand assets |
 
 ## Deploying
 
@@ -36,7 +36,7 @@ TLS in transit; AES-256 at rest; Row Level Security so users can only ever read/
 
 ## Feedback inbox
 
-The in-app contact form writes to the `feedback` table (insert-only through the public API). Read messages in Supabase → Table Editor → feedback. Fallback when the backend is unreachable: the app links to https://github.com/DoneByAdam/Planwise/issues.
+The in-app contact form writes to the `feedback` table (insert-only through the public API). Read messages in Supabase → Table Editor → feedback. Fallback when the backend is unreachable: the app links to https://github.com/DoneByAdam/Planwize/issues.
 
 ## Notes on coaching content
 

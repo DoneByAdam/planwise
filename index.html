@@ -33,25 +33,30 @@
   </span>
   </span>
   <span class="spacer"></span>
-  <button class="chip-btn" id="plansBtn" title="Your saved plans"><span id="planName">My plan</span> ▾</button>
+  <select id="planSelect" class="chip-select" title="Switch plan" aria-label="Switch plan"></select>
+  <button class="chip-btn" id="managePlansBtn" title="Manage all your plans">My Plans</button>
   <button class="chip-btn" id="reportBtn">PDF report</button>
   <button class="chip-btn primary" id="authBtn"><span class="sync-dot" id="syncDot"></span><span id="authBtnLabel">Sign in</span></button>
 </header>
 
 <nav class="nav" aria-label="Sections">
   <button data-view="home" class="active"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</button>
-  <button data-view="plans"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Plans</button>
   <button data-view="inputs"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="12" r="2.5"/><circle cx="14" cy="18" r="2.5"/></svg>Inputs</button>
   <button data-view="dashboard"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</button>
   <button data-view="paychecks"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 15h4"/></svg>Pays</button>
   <button data-view="scenarios"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M6 20V10M12 20V4M18 20v-7"/></svg>Compare</button>
   <button data-view="projection"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>Grow</button>
+    <button data-view="plans"><svg fill="none" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>My Plans</button>
 </nav>
 
 <main class="wrap">
   <div class="banner" id="guestBanner" hidden>
     <span>You're in <strong>try-it mode</strong> — everything works and saves to this device. Create a free account to keep your plan across devices.</span>
     <button class="btn ghost" id="bannerSignup" style="min-height:38px;padding:8px 14px">Create account</button>
+  </div>
+  <div class="banner" id="draftBanner" hidden>
+    <span>This plan isn't saved yet — it'll be gone if you clear your browser data or switch to another plan.</span>
+    <button class="btn ghost" id="saveDraftBtn" style="min-height:38px;padding:8px 14px">Save my plan</button>
   </div>
 
   <!-- ============ HOME ============ -->
@@ -95,7 +100,7 @@
       <h2>How it works</h2>
       <ol class="steps">
         <li><strong>Enter your pay info</strong> — salary, how often you're paid, your 401(k) rates. Takes about two minutes; every field has a plain-English explainer.</li>
-        <li><strong>Hit Calculate</strong> — Planwize checks your inputs and tells you if anything's missing.</li>
+        <li><strong>Hit Generate my plan</strong> — Planwize checks your inputs and tells you if anything's missing.</li>
         <li><strong>Explore</strong> — your paycheck-by-paycheck schedule, side-by-side strategy comparisons, tax savings, and the compounding curve to retirement.</li>
       </ol>
       <button class="btn big" id="ctaStart2" style="margin-top:8px">Start my plan</button>
@@ -154,9 +159,9 @@
 
   <!-- ============ PLANS & REPORTS ============ -->
   <section class="view" id="view-plans">
-    <h1>Plans &amp; reports</h1>
-    <p class="sub">Every plan is a named, dated snapshot of your numbers — your what-if runs, one per job, and past years as history. Open one to explore it, or download its PDF report straight from here. <button class="info" data-term="multiPlan">?</button></p>
-    <button class="btn" id="newPlanBtn" style="width:100%;max-width:420px;margin-bottom:14px">+ New plan</button>
+    <h1>My Plans</h1>
+    <p class="sub">Every saved plan is a named, dated snapshot of your numbers — your what-if runs, one per job, and past years as history. Open one to explore it, or download its PDF report straight from here. A plan only lands in this list once you choose to save it. <button class="info" data-term="multiPlan">?</button></p>
+    <button class="btn" id="newPlanBtn" style="width:100%;max-width:420px;margin-bottom:14px">+ Start a new plan</button>
     <div id="plansList"></div>
     <div class="notice">Multiple jobs? The IRS deferral limit is per <em>person</em> — all your 401(k)s share one limit.</div>
     <div class="notice">Questions, suggestions, or issues? <a href="#" id="contactBtn3">Contact me</a> — it goes straight to the builder.</div>
@@ -165,7 +170,7 @@
   <!-- ============ INPUTS ============ -->
   <section class="view" id="view-inputs">
     <h1>Inputs</h1>
-    <p class="sub">Fill in what you know — every field starts with a simple example and has a <button class="info" data-term="whatIsThis">?</button> explainer. Then hit <strong>Calculate</strong> below.</p>
+    <p class="sub">Fill in what you know — every field starts with a simple example and has a <button class="info" data-term="whatIsThis">?</button> explainer. Then hit <strong>Generate my plan</strong> below.</p>
 
     <div class="card valcard" id="valCard" hidden>
       <h2 style="color:var(--red)">Almost there — a few things need attention</h2>
@@ -264,15 +269,16 @@
       </div>
     </div>
 
-    <div class="calcbar">
-      <button class="btn big" id="calcBtn">Calculate my plan</button>
-      <p class="hint" style="margin-top:8px">Nothing leaves your device until you choose to create an account.</p>
-    </div>
-
     <div class="card">
       <h2>IRS figures in effect · <span id="irsYearLabel"></span></h2>
       <div id="irsReadout" style="font-family:var(--font-mono);font-size:13px;line-height:2"></div>
       <p class="footer-note" id="irsSource"></p>
+    </div>
+
+    <div class="calcbar">
+      <p class="hint" style="margin-bottom:10px">That's everything — ready when you are.</p>
+      <button class="btn big" id="calcBtn">Generate my plan</button>
+      <p class="hint" style="margin-top:10px">Nothing leaves your device, and nothing is saved, until you choose to.</p>
     </div>
   </section>
 
@@ -281,7 +287,7 @@
     <div class="empty" data-gate>
       <div class="ei"><svg fill="none" stroke-width="1.6" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
       <h2>Your overview will appear here</h2>
-      <p>Enter your pay info and hit Calculate — takes about two minutes.</p>
+      <p>Enter your pay info and hit Generate my plan — takes about two minutes.</p>
       <button class="btn" data-goto="inputs">Go to Inputs</button>
     </div>
     <div data-gated hidden>
@@ -430,6 +436,7 @@
     <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email"></div>
     <div class="field"><label for="authPass">Password</label><input id="authPass" type="password" autocomplete="current-password" minlength="8">
       <div class="hint">At least 8 characters.</div></div>
+    <p style="margin:-6px 0 14px"><a href="#" id="forgotPass" class="linklike">Forgot password?</a></p>
     <div class="field" id="encFieldWrap">
       <label for="encPass">Encryption passphrase <span style="font-weight:400">(optional, recommended)</span></label>
       <input id="encPass" type="password" autocomplete="off">

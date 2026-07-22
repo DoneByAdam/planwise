@@ -44,4 +44,29 @@ Insights are rules-of-thumb from widely published guidance (Fidelity 15% savings
 
 ## Testing
 
-The calculation engine and UI flows are covered by automated tests (Node + jsdom): pay frequencies, IRS capping, bonus target/actual precedence, employer contributions, state tax hand-checks (CA/PA/NJ/TX), plan migration and CRUD, validation, gating, and chart-failure fallbacks.
+The calculation engine and UI flows are covered by automated tests (Node + jsdom): pay frequencies, IRS capping, bonus target/actual precedence, employer contributions, state tax hand-checks (CA/PA/NJ/TX), plan migration and CRUD, validation, gating, chart-failure fallbacks, the deliberate-save flow, and password reset.
+
+## Changelog
+
+### v12
+- **Fixed: a new plan appeared on every login.** Root cause: the app always guaranteed *some* plan existed by silently creating one (named from "current year + 1", hence "2027 plan"), and signing in pushed that phantom plan to the cloud. Persistence is now split between an in-progress **draft** (device-only, never synced, never listed) and a **saved plan** (named, dated, appears in My Plans, synced when signed in). Nothing is saved or named unless the person deliberately chooses to.
+- **Deliberate save flow**: the button is now **Generate my plan** (was Calculate). Generating computes and shows results but saves nothing. A dismissible banner then offers **Save my plan** — naming happens at that moment, never before.
+- **"Plans" renamed to "My Plans"** everywhere, so it reads as personal simulations, not a purchasable package.
+- **My Plans moved to the end of the navigation** (after Grow) on both desktop and mobile.
+- **Header plan control is now a real dropdown** listing every saved plan for one-tap switching, plus a separate "My Plans" button for full management.
+- **Fixed the floating Generate button** — it used `position:sticky`, which on some layouts rendered as an overlay on top of not-yet-completed form fields. It's now a static block at the true end of the form, visible only once someone has scrolled through everything.
+- **Password reset added** (previously missing entirely): a "Forgot password?" link on the sign-in tab triggers Supabase's reset email; the returning link is detected via a `PASSWORD_RECOVERY` auth event and prompts for a new password.
+
+### v11
+- **Complete rename to Planwize**, including internal storage keys this time (`planwise.plans` → `planwize.plans`, etc.), now that the tool is pre-launch. A one-time migration moves any existing local data across automatically; nothing is lost.
+- **Live domain wired in**: canonical URL, Open Graph, and Twitter Card meta tags point to `https://myplanwize.com/`. GitHub issues link updated to the renamed `planwize` repo.
+- **Launch-readiness files**: `robots.txt` and a minimal `sitemap.xml`.
+- No Supabase schema changes were needed for this rename — table names never contained the brand name.
+
+### v10
+- **Renamed Planwise → Planwize** across all user-facing text, titles, PDF filenames, and UI strings. The home hero's wordmark became live text instead of a raster image (the old logo file had "PLANWISE" baked into its pixels), so the brand name can never drift from the code again.
+- **New About & Security page** — differentiators, the full security architecture (TLS, at-rest encryption, RLS, optional zero-knowledge encryption), who's behind the tool, and the disclaimer.
+- **Data export & delete-all** added to the About/Security page: a plain-JSON export of every saved plan, and a delete-all-plans control.
+
+### v9 and earlier
+Renamed from MaxOut to Planwise; fixed a CSS class collision that broke the Coaching Corner layout; added flexible bonus handling (target % or $, plus an actual-bonus override); added automatic (non-elective) employer contributions; added state + local income tax (all 50 states + DC, approximate); added multiple named/dated plans with cloud sync; added a feedback/contact form; fixed a `[hidden]` CSS override bug that kept the try-it banner visible after sign-in.

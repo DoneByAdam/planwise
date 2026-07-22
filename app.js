@@ -3,7 +3,7 @@
    Optional Supabase backend for accounts + sync (see README.md). */
 "use strict";
 
-const APP_VERSION = "11.0";
+const APP_VERSION = "12.0";
 
 /* ============================================================
    CONFIG — paste your Supabase project values to enable accounts.
@@ -469,6 +469,7 @@ function gate() {
   const on = !!state.calculated;
   document.querySelectorAll("[data-gate]").forEach(el => el.hidden = on);
   document.querySelectorAll("[data-gated]").forEach(el => el.hidden = !on);
+  updateDraftBanner();
 }
 
 /* ============================================================
@@ -838,6 +839,10 @@ function migrateData(v) {
   return v;
 }
 
+const DRAFT_KEY = "planwize.draft";
+function isDraft() { return currentPlanId === null; }
+function freshDraft() { const d = structuredClone(DEFAULT_STATE); d.calculated = false; return d; }
+
 function loadStore() {
   // one-time carry-over from the pre-rename "planwise.*" keys (multi-plan store)
   if (!localStorage.getItem("planwize.plans") && localStorage.getItem("planwise.plans")) {
@@ -848,40 +853,73 @@ function loadStore() {
   try {
     plans = JSON.parse(localStorage.getItem("planwize.plans")) || [];
   } catch { plans = []; }
-  // migrate the oldest single-plan key (pre-v8), under either name
+  // migrate the oldest single-plan key (pre-v8), under either name — this one
+  // predates the "deliberate save" model, so treat it as an already-saved plan
   if (!plans.length) {
     let raw = localStorage.getItem("planwize.plan") || localStorage.getItem("planwise.plan");
     if (raw) {
       try {
         const data = migrateData(JSON.parse(raw));
-        plans = [{ id: newId(), name: (data.planYear || "My") + " plan", created: Date.now(), updated: Date.now(), data }];
+        plans = [{ id: newId(), name: (data.planYear || DEFAULT_STATE.planYear) + " plan", created: Date.now(), updated: Date.now(), data }];
       } catch { /* ignore corrupt */ }
       localStorage.removeItem("planwize.plan"); localStorage.removeItem("planwise.plan");
     }
   }
   plans.forEach(p => p.data = migrateData(p.data));
-  currentPlanId = localStorage.getItem("planwize.currentPlan");
-  if (!plans.find(p => p.id === currentPlanId)) currentPlanId = plans[0]?.id || null;
-  if (!currentPlanId) {
-    const p = { id: newId(), name: new Date().getFullYear() + 1 + " plan", created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) };
-    plans = [p]; currentPlanId = p.id;
+
+  currentPlanId = localStorage.getItem("planwize.currentPlan") || null;
+  if (currentPlanId && !plans.find(p => p.id === currentPlanId)) currentPlanId = null;
+
+  if (currentPlanId) {
+    saveStore();
+    return structuredClone(plans.find(p => p.id === currentPlanId).data);
   }
+  // No active saved plan — work from a draft. Nothing here is ever pushed to
+  // `plans` or the cloud until the person explicitly chooses to save it.
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { draft = null; }
+  draft = draft ? migrateData(draft) : freshDraft();
   saveStore();
-  return structuredClone(plans.find(p => p.id === currentPlanId).data);
+  return draft;
 }
 function saveStore() {
   localStorage.setItem("planwize.plans", JSON.stringify(plans));
-  localStorage.setItem("planwize.currentPlan", currentPlanId);
+  if (currentPlanId) localStorage.setItem("planwize.currentPlan", currentPlanId);
+  else localStorage.removeItem("planwize.currentPlan");
 }
 function currentPlan() { return plans.find(p => p.id === currentPlanId); }
 
 let saveTimer = null;
 function persist() {
+  if (isDraft()) {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(state));
+    renderPlanChip();
+    return;                      // drafts are local-only, never synced to the cloud
+  }
   const p = currentPlan();
   if (p) { p.data = structuredClone(state); p.updated = Date.now(); }
   saveStore();
   renderPlanChip();
   if (session) { clearTimeout(saveTimer); saveTimer = setTimeout(() => cloudSavePlan(p), 900); }
+}
+
+/* Turn the in-progress draft into a real, named, permanently-saved plan.
+   This is the ONLY path that creates a plans[] entry — always a deliberate,
+   named action by the person, never automatic. */
+function promptSavePlan() {
+  const suggestion = (state.planYear || DEFAULT_STATE.planYear) + " plan";
+  const name = prompt('Name this plan (e.g. "2026 — main job", "2026 — aggressive Roth"):', suggestion);
+  if (name === null) return false;
+  const p = { id: newId(), name: (name.trim() || "Untitled plan").slice(0, 60), created: Date.now(), updated: Date.now(), data: structuredClone(state) };
+  plans.push(p);
+  currentPlanId = p.id;
+  localStorage.removeItem(DRAFT_KEY);
+  saveStore();
+  if (session) cloudSavePlan(p);
+  renderPlanChip();
+  updateDraftBanner();
+  toast(`Saved as "${p.name}"`);
+  return true;
 }
 
 /* ---------- client-side encryption (AES-256-GCM, PBKDF2 210k) ---------- */
@@ -949,9 +987,13 @@ async function cloudSyncDown() {
     if (local) { local.data = d; local.name = row.name; local.updated = cloudUpdated; }
     else plans.push({ id: row.id, name: row.name, created: new Date(row.created_at || row.updated_at).getTime(), updated: cloudUpdated, data: d });
   }
-  if (!plans.find(p => p.id === currentPlanId)) currentPlanId = plans[0]?.id || currentPlanId;
+  // Only reassign the active plan if the one that WAS active got removed
+  // elsewhere; never force a fresh sign-in into someone else's first plan,
+  // and never touch an in-progress unsaved draft.
+  if (currentPlanId && !plans.find(p => p.id === currentPlanId)) currentPlanId = null;
   saveStore();
-  openPlan(currentPlanId, { silent: true });
+  if (currentPlanId) openPlan(currentPlanId, { silent: true });
+  else { renderPlanChip(); renderPlansList(); }
 }
 
 /* ============================================================
@@ -959,11 +1001,28 @@ async function cloudSyncDown() {
    ============================================================ */
 function fmtDate(ts) { return new Date(ts).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); }
 function renderPlanChip() {
-  const p = currentPlan();
-  if (!p) return;
-  $("planName").textContent = p.name.length > 22 ? p.name.slice(0, 21) + "…" : p.name;
+  renderPlanSwitcher();
   const meta = $("planMeta");
-  if (meta) meta.textContent = `${p.name} · saved ${fmtDate(p.updated)} · created ${fmtDate(p.created)}`;
+  if (!meta) return;
+  const p = currentPlan();
+  if (p) meta.innerHTML = `${p.name} · saved ${fmtDate(p.updated)} · created ${fmtDate(p.created)}`;
+  else meta.innerHTML = `Unsaved draft — <a href="#" id="saveDraftLink">save it</a> to keep it past this browser session.`;
+  const link = $("saveDraftLink");
+  if (link) link.onclick = (e) => { e.preventDefault(); promptSavePlan(); };
+}
+function renderPlanSwitcher() {
+  const sel = $("planSelect");
+  if (!sel) return;
+  const sorted = plans.slice().sort((a, b) => b.updated - a.updated);
+  let html = "";
+  if (isDraft()) html += `<option value="" selected>Draft (unsaved)</option>`;
+  html += sorted.map(p => `<option value="${p.id}"${p.id === currentPlanId ? " selected" : ""}>${p.name}</option>`).join("");
+  sel.innerHTML = html || `<option value="">Draft (unsaved)</option>`;
+}
+function updateDraftBanner() {
+  const b = $("draftBanner");
+  if (!b) return;
+  b.hidden = !(isDraft() && state.calculated);
 }
 function refreshInputFields() {
   document.querySelectorAll("#view-inputs input, #view-inputs select").forEach(el => {
@@ -981,6 +1040,7 @@ function openPlan(id, opts = {}) {
   saveStore();
   refreshInputFields();
   renderPlanChip();
+  updateDraftBanner();
   renderAllSafe();
   if (!opts.silent) { toast(`Opened "${p.name}"`); goto(state.calculated ? "dashboard" : "inputs"); }
 }
@@ -1015,23 +1075,28 @@ function renderPlansList() {
   });
   box.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
     const p = plans.find(x => x.id === b.dataset.del);
-    if (plans.length === 1) { toast("This is your only plan — create another before deleting it"); return; }
     if (!confirm(`Delete "${p.name}"? This can't be undone.`)) return;
     plans = plans.filter(x => x.id !== p.id);
     cloudDelete(p.id);
-    if (currentPlanId === p.id) { currentPlanId = plans[0].id; openPlan(currentPlanId, { silent: true }); }
+    if (currentPlanId === p.id) {
+      if (plans[0]) openPlan(plans[0].id, { silent: true });
+      else { currentPlanId = null; state = freshDraft(); localStorage.removeItem(DRAFT_KEY); saveStore(); refreshInputFields(); updateDraftBanner(); renderAllSafe(); }
+    }
     saveStore(); renderPlansList(); renderPlanChip();
     toast("Plan deleted");
   });
 }
-function createPlan() {
-  const name = prompt("Name your plan (e.g. \"2026 — main job\", \"2026 — aggressive Roth\"):",
-    (currentPlan()?.data.planYear || new Date().getFullYear()) + " plan");
-  if (name === null) return;
-  const p = { id: newId(), name: (name.trim() || "Untitled plan").slice(0, 60), created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) };
-  plans.push(p); saveStore();
-  if (session) cloudSavePlan(p);
-  openPlan(p.id);
+/* Start a fresh, blank draft. Naming happens later, at Save time — not here —
+   so creating a new plan is never itself the moment data gets permanently kept. */
+function startNewPlan() {
+  currentPlanId = null;
+  state = freshDraft();
+  localStorage.removeItem(DRAFT_KEY);
+  saveStore();
+  refreshInputFields();
+  renderPlanChip();
+  updateDraftBanner();
+  renderAllSafe();
   goto("inputs");
 }
 
@@ -1082,7 +1147,18 @@ function setupAuth() {
   if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     supa.auth.getSession().then(({ data }) => { session = data.session; refreshAuthUI(); if (session) cloudSyncDown(); });
-    supa.auth.onAuthStateChange((_e, s2) => { session = s2; refreshAuthUI(); });
+    supa.auth.onAuthStateChange(async (event, s2) => {
+      session = s2; refreshAuthUI();
+      if (event === "PASSWORD_RECOVERY") {
+        // Person arrived via the emailed reset link — Supabase has already
+        // verified them; just collect a new password and set it.
+        const pw = prompt("Enter a new password (at least 8 characters):");
+        if (!pw) return;
+        if (pw.length < 8) { toast("Password needs to be at least 8 characters — try the reset link again"); return; }
+        const { error } = await supa.auth.updateUser({ password: pw });
+        toast(error ? "Couldn't update password — try the reset link again" : "Password updated — you're signed in");
+      }
+    });
   } else refreshAuthUI();
 
   $("authBtn").onclick = () => {
@@ -1092,6 +1168,18 @@ function setupAuth() {
   $("bannerSignup").onclick = () => openAuth("signup");
   $("tabSignin").onclick = () => setAuthMode("signin");
   $("tabSignup").onclick = () => setAuthMode("signup");
+  $("forgotPass").onclick = async (e) => {
+    e.preventDefault();
+    if (!supa) { toast("Accounts aren't configured yet"); return; }
+    const email = $("authEmail").value.trim() || prompt("Enter your account email:");
+    if (!email) return;
+    const notice = $("authNotice");
+    try {
+      const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.href.split("#")[0].split("?")[0] });
+      notice.hidden = false;
+      notice.textContent = error ? (error.message || "Couldn't send reset email.") : `Reset link sent to ${email} — check your inbox (and spam folder).`;
+    } catch (e2) { notice.hidden = false; notice.textContent = "Couldn't send reset email — try again in a moment."; }
+  };
   document.querySelectorAll(".modal [data-close]").forEach(b => b.onclick = () => b.closest(".modal").classList.remove("open"));
   document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("open"); }));
 
@@ -1127,6 +1215,7 @@ function setAuthMode(m) {
   $("tabSignup").classList.toggle("active", m === "signup");
   $("authSubmit").textContent = m === "signin" ? "Sign in" : "Create account";
   $("encFieldWrap").style.display = m === "signup" ? "" : "none";
+  $("forgotPass").parentElement.style.display = m === "signin" ? "" : "none";
 }
 function refreshAuthUI() {
   $("authBtnLabel").textContent = session ? "Sign out" : "Sign in";
@@ -1139,7 +1228,7 @@ function refreshAuthUI() {
    ============================================================ */
 function makePDF(planObj) {
   const s = planObj ? migrateData(structuredClone(planObj.data)) : state;
-  if (!s.calculated || (!planObj && !results)) { toast("Calculate that plan first — then the report has something to say"); goto("inputs"); return; }
+  if (!s.calculated || (!planObj && !results)) { toast("Generate that plan first — then the report has something to say"); goto("inputs"); return; }
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("PDF library couldn't load — check your connection and refresh"); return; }
   const R = planObj ? compute(s) : results;
   const { jsPDF } = window.jspdf;
@@ -1228,7 +1317,7 @@ document.addEventListener("click", e => {
   const g = e.target.closest("[data-goto]");
   if (g) goto(g.dataset.goto);
 });
-function runCalculate() {
+function runGenerate() {
   const errs = validate(state);
   showValidation(errs);
   if (errs.length) {
@@ -1239,6 +1328,7 @@ function runCalculate() {
   state.calculated = true;
   persist();
   renderAllSafe();
+  updateDraftBanner();
   goto("dashboard");
   toast("Your plan is ready");
 }
@@ -1260,20 +1350,27 @@ $("reportBtn").onclick = () => makePDF();
   $("guestBanner").hidden = false;
   bindInputs();
   setupAuth();
-  $("calcBtn").onclick = runCalculate;
+  $("calcBtn").onclick = runGenerate;
   $("ctaStart").onclick = () => goto("inputs");
   $("ctaStart2").onclick = () => goto("inputs");
   $("ctaSample").onclick = () => {
+    currentPlanId = null;                 // a sample is scratch — never overwrite an open saved plan
     state = structuredClone(DEFAULT_STATE);
     state.calculated = true;
+    localStorage.removeItem(DRAFT_KEY);
+    saveStore();
     persist();
     refreshInputFields();
     renderAllSafe();
+    updateDraftBanner();
     goto("dashboard");
     toast("Sample plan loaded — explore, then make it yours in Inputs");
   };
-  $("plansBtn").onclick = () => goto("plans");
-  $("newPlanBtn").onclick = createPlan;
+  $("managePlansBtn").onclick = () => goto("plans");
+  const planSel = $("planSelect");
+  if (planSel) planSel.onchange = () => { if (planSel.value) openPlan(planSel.value); };
+  $("newPlanBtn").onclick = startNewPlan;
+  $("saveDraftBtn").onclick = () => promptSavePlan();
   $("contactBtn").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
   $("contactBtn2").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
   $("contactBtn3").onclick = (e) => { e.preventDefault(); $("contactModal").classList.add("open"); };
@@ -1289,10 +1386,14 @@ $("reportBtn").onclick = () => makePDF();
   if (delBtn) delBtn.onclick = async () => {
     if (!confirm(`Delete all ${plans.length} plan(s)? This can't be undone.`)) return;
     for (const p of plans) await cloudDelete(p.id);
-    plans = [{ id: newId(), name: new Date().getFullYear() + " plan", created: Date.now(), updated: Date.now(), data: structuredClone(DEFAULT_STATE) }];
-    currentPlanId = plans[0].id;
+    plans = [];
+    currentPlanId = null;
+    state = freshDraft();
+    localStorage.removeItem(DRAFT_KEY);
     saveStore();
-    openPlan(currentPlanId, { silent: true });
+    refreshInputFields();
+    updateDraftBanner();
+    renderAllSafe();
     toast("All plans deleted — starting fresh");
     goto("home");
   };

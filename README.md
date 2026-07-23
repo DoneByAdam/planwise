@@ -48,6 +48,9 @@ The calculation engine and UI flows are covered by automated tests (Node + jsdom
 
 ## Changelog
 
+### v12.1
+- **Fixed a real mobile-fit bug**, found by inspecting the code, not guessing: the header packed six items — logo, plan dropdown, "My Plans," "PDF report," "Sign in" — into one non-wrapping flex row, which overflows or squishes on typical Android Chrome widths (~360–412px). It now wraps onto a second row below ~640px, with smaller controls at that size. Also removed a stray duplicate closing `</span>` left over from an earlier edit, and made two-column input rows collapse to one column below ~480px so number fields aren't cramped on small phones.
+
 ### v12
 - **Fixed: a new plan appeared on every login.** Root cause: the app always guaranteed *some* plan existed by silently creating one (named from "current year + 1", hence "2027 plan"), and signing in pushed that phantom plan to the cloud. Persistence is now split between an in-progress **draft** (device-only, never synced, never listed) and a **saved plan** (named, dated, appears in My Plans, synced when signed in). Nothing is saved or named unless the person deliberately chooses to.
 - **Deliberate save flow**: the button is now **Generate my plan** (was Calculate). Generating computes and shows results but saves nothing. A dismissible banner then offers **Save my plan** — naming happens at that moment, never before.

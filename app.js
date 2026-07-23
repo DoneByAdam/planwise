@@ -3,7 +3,7 @@
    Optional Supabase backend for accounts + sync (see README.md). */
 "use strict";
 
-const APP_VERSION = "12.0";
+const APP_VERSION = "12.1";
 
 /* ============================================================
    CONFIG — paste your Supabase project values to enable accounts.
